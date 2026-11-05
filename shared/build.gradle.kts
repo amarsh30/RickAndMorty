@@ -59,6 +59,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:database"))
             implementation(project(":core:domain"))
+            implementation(project(":feature:character"))
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

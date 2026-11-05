@@ -1,0 +1,40 @@
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.androidMultiplatformLibrary)
+    alias(libs.plugins.composeMultiplatform)
+    alias(libs.plugins.composeCompiler)
+}
+
+kotlin {
+    android {
+        namespace = "com.amr.core.designsystem"
+
+        compileSdk {
+            version = release(37)
+        }
+
+        minSdk = 24
+    }
+
+    iosArm64()
+    iosSimulatorArm64()
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(libs.kotlin.stdlib)
+            implementation(libs.kotlinx.coroutines.core)
+
+            implementation(libs.androidx.lifecycle.viewmodel)
+
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.material3)
+            implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.koin.core)
+            implementation(libs.koin.compose.viewmodel)
+
+            // Domain models dan UseCases
+            implementation(project(":core:domain"))
+        }
+    }
+}
