@@ -50,9 +50,15 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+
             implementation(libs.koin.core)
             implementation(libs.ktor.client.core)
+            implementation(libs.androidx.room.runtime)
+
+            implementation(project(":core:data"))
             implementation(project(":core:network"))
+            implementation(project(":core:database"))
+            implementation(project(":core:domain"))
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
