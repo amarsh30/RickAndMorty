@@ -8,3 +8,7 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform) apply false
     alias(libs.plugins.androidLint) apply false
 }
+
+// Task automation testing (unitTest, uiTest, deviceTest, allTest) didaftarkan per modul
+// oleh convention plugin "amr.kmp.test" (gradle/build-logic). Menjalankan
+// `./gradlew unitTest` dari root otomatis mengeksekusinya di semua modul. Lihat TESTING.md.

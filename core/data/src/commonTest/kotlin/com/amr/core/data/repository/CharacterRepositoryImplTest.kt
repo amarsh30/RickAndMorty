@@ -1,66 +1,90 @@
 package com.amr.core.data.repository
 
 import com.amr.core.data.fake.FakeCharacterLocalDataSource
-import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
+import com.amr.core.data.fake.FakeCharacterRemoteDataSource
+import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.domain.model.Character
+import com.amr.core.network.exception.NetworkException
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import com.amr.core.data.remote.dto.CharacterDto
-import com.amr.core.network.exception.NetworkException
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
+/**
+ * Unit test untuk [CharacterRepositoryImpl].
+ *
+ * Repository hanya bergantung pada abstraksi (CharacterRemoteDataSource &
+ * CharacterLocalDataSource) — prinsip Dependency Inversion — sehingga kita
+ * cukup menyuntikkan fake tanpa Ktor, Room, maupun Koin.
+ */
 class CharacterRepositoryImplTest {
 
-    @Test
-    fun refreshCharacters_whenApiFails_keepsLocalCache() = runBlocking {
+    private lateinit var remoteDataSource: FakeCharacterRemoteDataSource
+    private lateinit var localDataSource: FakeCharacterLocalDataSource
+    private lateinit var repository: CharacterRepositoryImpl
 
-        // 1. Siapkan cache yang sudah ada
-        val localDataSource = FakeCharacterLocalDataSource()
+    private val cachedCharacters = listOf(
+        Character(1, "Rick Sanchez", "Alive", "Human", "rick.png"),
+        Character(2, "Morty Smith", "Alive", "Human", "morty.png")
+    )
 
-        val cachedCharacters = listOf(
-            Character(
-                id = 1,
-                name = "Rick Sanchez",
-                status = "Alive",
-                species = "Human",
-                imageUrl = "rick.png"
-            ),
-            Character(
-                id = 2,
-                name = "Morty Smith",
-                status = "Alive",
-                species = "Human",
-                imageUrl = "morty.png"
-            )
-        )
-
-        localDataSource.saveCharacters(cachedCharacters)
-
-        // 2. Fake API yang selalu gagal
-        val remoteDataSource = object : CharacterRemoteDataSource {
-
-            override suspend fun getCharacters(): CharacterResponseDto {
-                throw NetworkException.NoInternet()
-            }
-        }
-
-        // 3. Buat Repository
-        val repository = CharacterRepositoryImpl(
+    @BeforeTest
+    fun setUp() {
+        remoteDataSource = FakeCharacterRemoteDataSource()
+        localDataSource = FakeCharacterLocalDataSource()
+        repository = CharacterRepositoryImpl(
             remoteDataSource = remoteDataSource,
             localDataSource = localDataSource
         )
+    }
 
-        // 4. Pastikan refresh melempar error
+    @Test
+    fun observeCharacters_initially_emitsEmptyList() = runTest {
+        assertTrue(repository.observeCharacters().first().isEmpty())
+    }
+
+    @Test
+    fun refreshCharacters_whenApiSucceeds_savesMappedDataToLocal() = runTest {
+        repository.refreshCharacters()
+
+        val expected = listOf(
+            Character(1, "Rick Sanchez", "Alive", "Human", "https://example.com/rick.png"),
+            Character(2, "Morty Smith", "Alive", "Human", "https://example.com/morty.png")
+        )
+        assertEquals(expected, repository.observeCharacters().first())
+        assertEquals(1, remoteDataSource.callCount)
+    }
+
+    @Test
+    fun refreshCharacters_whenApiSucceeds_replacesOldCache() = runTest {
+        localDataSource.saveCharacters(cachedCharacters)
+        remoteDataSource.response = CharacterResponseDto(
+            results = listOf(
+                CharacterDto(3, "Summer Smith", "Alive", "Human", "summer.png")
+            )
+        )
+
+        repository.refreshCharacters()
+
+        assertEquals(
+            listOf(Character(3, "Summer Smith", "Alive", "Human", "summer.png")),
+            repository.observeCharacters().first()
+        )
+    }
+
+    @Test
+    fun refreshCharacters_whenApiFails_throwsAndKeepsLocalCache() = runTest {
+        localDataSource.saveCharacters(cachedCharacters)
+        remoteDataSource.failWithNoInternet()
+
         assertFailsWith<NetworkException.NoInternet> {
             repository.refreshCharacters()
         }
 
-        // 5. Periksa cache setelah refresh gagal
-        val result = localDataSource.observeCharacters().first()
-
-        assertEquals(cachedCharacters, result)
+        assertEquals(cachedCharacters, repository.observeCharacters().first())
     }
 }
