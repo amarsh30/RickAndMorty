@@ -1,3 +1,4 @@
+
 package com.amr.feature.character.presentation
 
 import androidx.lifecycle.ViewModel
@@ -8,7 +9,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class CharacterViewModel(
@@ -32,7 +32,12 @@ class CharacterViewModel(
                 .collect { characters ->
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        characters = characters
+                        characters = characters,
+                        errorMessage = if (characters.isNotEmpty()) {
+                            null
+                        } else {
+                            _uiState.value.errorMessage
+                        }
                     )
                 }
         }
@@ -52,8 +57,14 @@ class CharacterViewModel(
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    errorMessage = "Gagal memperbarui karakter"
+                val currentState = _uiState.value
+
+                _uiState.value = currentState.copy(
+                    errorMessage = if (currentState.characters.isEmpty()) {
+                        "Gagal memuat karakter. Periksa koneksi internet."
+                    } else {
+                        "Gagal memperbarui data. Menampilkan data tersimpan."
+                    }
                 )
             } finally {
                 _uiState.value = _uiState.value.copy(

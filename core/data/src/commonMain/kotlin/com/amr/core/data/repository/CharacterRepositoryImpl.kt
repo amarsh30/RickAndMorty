@@ -17,7 +17,8 @@ class CharacterRepositoryImpl(
     }
 
     override suspend fun refreshCharacters() {
-        TODO("Waiting for LocalDataSource implementation")
+        val characters = fetchRemoteCharacters()
+        localDataSource.saveCharacters(characters)
     }
 
     private suspend fun fetchRemoteCharacters(): List<Character> {

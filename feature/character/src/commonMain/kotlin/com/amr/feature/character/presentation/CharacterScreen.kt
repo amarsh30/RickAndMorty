@@ -96,7 +96,8 @@ private fun CharacterContent(
                     ) { character ->
                         CharacterCard(
                             name = character.name,
-                            status = character.status
+                            status = character.status,
+                            imageUrl = character.imageUrl
                         )
                     }
                 }
