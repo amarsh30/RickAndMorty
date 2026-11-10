@@ -22,4 +22,7 @@ sealed class NetworkException(
 
     class Timeout :
         NetworkException("Request timeout")
+
+    class Serialization :
+        NetworkException("Invalid response format")
 }

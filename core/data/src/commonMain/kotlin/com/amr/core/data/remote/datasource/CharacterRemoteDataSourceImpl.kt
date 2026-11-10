@@ -3,7 +3,6 @@ package com.amr.core.data.remote.datasource
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.network.util.safeApiCall
 import io.ktor.client.HttpClient
-import io.ktor.client.call.body
 import io.ktor.client.request.get
 
 class CharacterRemoteDataSourceImpl(
@@ -11,10 +10,8 @@ class CharacterRemoteDataSourceImpl(
 ) : CharacterRemoteDataSource {
 
     override suspend fun getCharacters(): CharacterResponseDto {
-        val response = safeApiCall {
+        return safeApiCall<CharacterResponseDto> {
             client.get("character")
         }
-
-        return response.body<CharacterResponseDto>()
     }
 }
