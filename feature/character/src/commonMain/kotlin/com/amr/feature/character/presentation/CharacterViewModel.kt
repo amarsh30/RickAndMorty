@@ -3,6 +3,7 @@ package com.amr.feature.character.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.amr.core.domain.error.DataError
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import kotlinx.coroutines.CancellationException
@@ -56,21 +57,48 @@ class CharacterViewModel(
                 refreshCharactersUseCase()
             } catch (exception: CancellationException) {
                 throw exception
+            } catch (exception: DataError) {
+                showRefreshError(reason = exception.toMessage())
             } catch (exception: Exception) {
-                val currentState = _uiState.value
-
-                _uiState.value = currentState.copy(
-                    errorMessage = if (currentState.characters.isEmpty()) {
-                        "Gagal memuat karakter. Periksa koneksi internet."
-                    } else {
-                        "Gagal memperbarui data. Menampilkan data tersimpan."
-                    }
-                )
+                // Fallback for failures outside the data error contract (e.g. local database).
+                showRefreshError(reason = GENERIC_ERROR_MESSAGE)
             } finally {
                 _uiState.value = _uiState.value.copy(
                     isRefreshing = false
                 )
             }
         }
+    }
+
+    /**
+     * Shows [reason] only when there is no cached data to fall back on.
+     * With cached data, the list stays visible with a generic stale-data warning.
+     */
+    private fun showRefreshError(reason: String) {
+        val currentState = _uiState.value
+
+        _uiState.value = currentState.copy(
+            errorMessage = if (currentState.characters.isEmpty()) {
+                reason
+            } else {
+                "Gagal memperbarui data. Menampilkan data tersimpan."
+            }
+        )
+    }
+
+    private fun DataError.toMessage(): String {
+        return when (this) {
+            is DataError.NoConnection -> "Gagal memuat karakter. Periksa koneksi internet."
+            is DataError.Timeout -> "Server terlalu lama merespons. Coba lagi."
+            is DataError.Unauthorized -> "Akses ke data ditolak."
+            is DataError.NotFound -> "Data karakter tidak ditemukan."
+            is DataError.Server -> "Server sedang bermasalah. Coba lagi nanti."
+            is DataError.InvalidData -> "Data dari server tidak dapat dibaca."
+            is DataError.Unknown -> GENERIC_ERROR_MESSAGE
+        }
+    }
+
+    private companion object {
+        const val GENERIC_ERROR_MESSAGE = "Terjadi kesalahan. Coba lagi."
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
@@ -46,7 +47,7 @@ class CharacterScreenTest {
     @Test
     fun whenRefreshFailsWithoutCache_showsErrorAndRetryWorks() = runComposeUiTest {
         val repository = FakeCharacterRepository().apply {
-            errorToThrow = Exception("No internet")
+            errorToThrow = DataError.NoConnection()
         }
 
         setContent { CharacterScreen(viewModel = createViewModel(repository)) }
@@ -65,7 +66,7 @@ class CharacterScreenTest {
     fun whenRefreshFailsWithCache_showsCachedListAndWarning() = runComposeUiTest {
         val repository = FakeCharacterRepository().apply {
             characters.value = listOf(rick)
-            errorToThrow = Exception("No internet")
+            errorToThrow = DataError.NoConnection()
         }
 
         setContent { CharacterScreen(viewModel = createViewModel(repository)) }
