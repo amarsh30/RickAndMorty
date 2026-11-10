@@ -4,14 +4,18 @@ import com.amr.core.data.fake.FakeCharacterLocalDataSource
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
 import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
+import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.network.exception.NetworkException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -81,7 +85,36 @@ class CharacterRepositoryImplTest {
         localDataSource.saveCharacters(cachedCharacters)
         remoteDataSource.failWithNoInternet()
 
-        assertFailsWith<NetworkException.NoInternet> {
+        val error = assertFailsWith<DataError.NoConnection> {
+            repository.refreshCharacters()
+        }
+
+        assertIs<NetworkException.NoInternet>(error.cause)
+        assertEquals(cachedCharacters, repository.observeCharacters().first())
+    }
+
+    @Test
+    fun refreshCharacters_whenResponseInvalid_throwsInvalidDataAndKeepsLocalCache() = runTest {
+        localDataSource.saveCharacters(cachedCharacters)
+        val source = NetworkException.Serialization()
+        remoteDataSource.errorToThrow = source
+
+        val error = assertFailsWith<DataError.InvalidData> {
+            repository.refreshCharacters()
+        }
+
+        assertSame(source, error.cause)
+        assertEquals(cachedCharacters, repository.observeCharacters().first())
+    }
+
+    @Test
+    fun refreshCharacters_whenCancelled_propagatesCancellationAndKeepsLocalCache() = runTest {
+        localDataSource.saveCharacters(cachedCharacters)
+        remoteDataSource.errorToThrow = CancellationException("cancelled")
+
+        // CancellationException and DataError are disjoint types, so a passing
+        // assertFailsWith here also proves cancellation was not mapped.
+        assertFailsWith<CancellationException> {
             repository.refreshCharacters()
         }
 

@@ -1,10 +1,12 @@
 package com.amr.core.data.repository
 
+import com.amr.core.data.error.toDataError
 import com.amr.core.data.local.datasource.CharacterLocalDataSource
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.repository.CharacterRepository
+import com.amr.core.network.exception.NetworkException
 import kotlinx.coroutines.flow.Flow
 
 class CharacterRepositoryImpl(
@@ -17,7 +19,12 @@ class CharacterRepositoryImpl(
     }
 
     override suspend fun refreshCharacters() {
-        val characters = fetchRemoteCharacters()
+        val characters = try {
+            fetchRemoteCharacters()
+        } catch (e: NetworkException) {
+            throw e.toDataError()
+        }
+
         localDataSource.saveCharacters(characters)
     }
 
