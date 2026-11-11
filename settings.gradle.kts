@@ -34,8 +34,6 @@ dependencyResolutionManagement {
 
 include(":androidApp")
 include(":shared")
-include(":core")
-include(":feature")
 
 include(":core:domain")
 include(":core:network")
