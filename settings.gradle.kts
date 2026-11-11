@@ -2,7 +2,6 @@ rootProject.name = "RickAndMorty"
 
 pluginManagement {
     // Convention plugin lokal (mis. id("amr.kmp.test")), lihat gradle/build-logic
-    // Nama dibedakan dari modul template :build-logic agar tidak bentrok
     includeBuild("gradle/build-logic") {
         name = "convention-plugins"
     }
@@ -37,7 +36,6 @@ include(":androidApp")
 include(":shared")
 include(":core")
 include(":feature")
-include(":build-logic")
 
 include(":core:domain")
 include(":core:network")
