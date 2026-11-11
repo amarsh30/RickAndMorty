@@ -5,7 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.usecase.LoadNextPageCharactersUseCase
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
+import com.amr.core.domain.usecase.ObservePaginationStateUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -17,7 +20,9 @@ import kotlinx.coroutines.launch
 
 class CharacterViewModel(
     private val observeCharactersUseCase: ObserveCharactersUseCase,
-    private val refreshCharactersUseCase: RefreshCharactersUseCase
+    private val refreshCharactersUseCase: RefreshCharactersUseCase,
+    private val observePaginationStateUseCase: ObservePaginationStateUseCase,
+    private val loadNextPageCharactersUseCase: LoadNextPageCharactersUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CharacterUiState())
@@ -26,6 +31,7 @@ class CharacterViewModel(
         _uiState.asStateFlow()
 
     private var observeJob: Job? = null
+    private var paginationJob: Job? = null
 
     /**
      * True while the Room observation has failed and not yet emitted again.
@@ -41,7 +47,30 @@ class CharacterViewModel(
 
     init {
         observeCharacters()
+        observePaginationState()
         refreshCharacters()
+    }
+
+    private fun observePaginationState() {
+        paginationJob = viewModelScope.launch {
+            observePaginationStateUseCase()
+                .catch { exception ->
+                    if (exception is CancellationException) throw exception
+
+                    // Unreadable metadata: stop auto load-more; a refresh rewrites the
+                    // metadata and restarts this collector.
+                    _uiState.value = _uiState.value.copy(
+                        canLoadMore = false,
+                        isEndReached = false
+                    )
+                }
+                .collect { state ->
+                    _uiState.value = _uiState.value.copy(
+                        canLoadMore = state == PaginationState.HasMore,
+                        isEndReached = state == PaginationState.EndReached
+                    )
+                }
+        }
     }
 
     private fun observeCharacters() {
@@ -87,6 +116,7 @@ class CharacterViewModel(
     fun refreshCharacters() {
         // Restart a failed observation; an active collector is never duplicated.
         if (observeJob?.isActive != true) observeCharacters()
+        if (paginationJob?.isActive != true) observePaginationState()
 
         if (_uiState.value.isRefreshing) return
 
@@ -96,7 +126,8 @@ class CharacterViewModel(
             // A database error stays until Room emits again, even if the refresh succeeds.
             _uiState.value = _uiState.value.copy(
                 isRefreshing = true,
-                errorMessage = if (isObservationFailed) _uiState.value.errorMessage else null
+                errorMessage = if (isObservationFailed) _uiState.value.errorMessage else null,
+                loadMoreErrorMessage = null
             )
 
             try {
@@ -112,6 +143,40 @@ class CharacterViewModel(
                 _uiState.value = _uiState.value.copy(
                     isRefreshing = false
                 )
+            }
+        }
+    }
+
+    /**
+     * Loads the next page when one exists. Ignored while a refresh or another
+     * load-more is running, after the last page, and before the first page is known.
+     * The repository serializes it with refresh, so a racing refresh cannot corrupt
+     * the page order.
+     */
+    fun loadMoreCharacters() {
+        val currentState = _uiState.value
+        if (
+            !currentState.canLoadMore ||
+            currentState.isLoadingMore ||
+            currentState.isRefreshing
+        ) return
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoadingMore = true,
+                loadMoreErrorMessage = null
+            )
+
+            try {
+                loadNextPageCharactersUseCase()
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: DataError) {
+                _uiState.value = _uiState.value.copy(loadMoreErrorMessage = exception.toMessage())
+            } catch (exception: Exception) {
+                _uiState.value = _uiState.value.copy(loadMoreErrorMessage = GENERIC_ERROR_MESSAGE)
+            } finally {
+                _uiState.value = _uiState.value.copy(isLoadingMore = false)
             }
         }
     }

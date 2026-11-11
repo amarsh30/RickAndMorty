@@ -11,12 +11,17 @@ import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.usecase.LoadNextPageCharactersUseCase
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
+import com.amr.core.domain.usecase.ObservePaginationStateUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import com.amr.feature.character.fake.FakeCharacterRepository
 import kotlinx.coroutines.CompletableDeferred
@@ -39,7 +44,9 @@ class CharacterScreenTest {
 
     private fun createViewModel(repository: FakeCharacterRepository) = CharacterViewModel(
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
-        refreshCharactersUseCase = RefreshCharactersUseCase(repository)
+        refreshCharactersUseCase = RefreshCharactersUseCase(repository),
+        observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
     )
 
     /** Pull-to-refresh indicator in its refreshing (spinning) state. */
@@ -49,6 +56,91 @@ class CharacterScreenTest {
 
     private val anyIndeterminateProgress: SemanticsMatcher =
         hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)
+
+    // --- Infinite scroll (E6) ---
+
+    private fun manyCharacters(count: Int) =
+        (1..count).map { Character(it, "Character $it", "Alive", "Human", null) }
+
+    @Test
+    fun shortListWithMorePages_loadsNextPageAndShowsFooterIndicator() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = listOf(rick)
+            paginationState.value = PaginationState.HasMore
+            loadNextPageGate = gate
+            nextPageResult = listOf(morty)
+            paginationStateAfterLoad = PaginationState.EndReached
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        // The end of a one-item list is visible, so the next page is requested right away.
+        onNodeWithTag(CHARACTER_LOAD_MORE_INDICATOR_TAG).assertExists()
+        assertEquals(1, repository.loadNextPageCount)
+
+        gate.complete(Unit)
+
+        onNodeWithText("Morty Smith").assertIsDisplayed()
+        onNodeWithTag(CHARACTER_LOAD_MORE_INDICATOR_TAG).assertDoesNotExist()
+        onNodeWithText("Semua karakter sudah ditampilkan").assertIsDisplayed()
+    }
+
+    @Test
+    fun loadMoreFails_showsFooterRetryThatLoadsNextPage() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = listOf(rick)
+            paginationState.value = PaginationState.HasMore
+            loadNextPageError = DataError.NoConnection()
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Gagal memuat karakter. Periksa koneksi internet.").assertIsDisplayed()
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+        // A failed load is not retried automatically.
+        assertEquals(1, repository.loadNextPageCount)
+
+        repository.loadNextPageError = null
+        repository.nextPageResult = listOf(morty)
+        // Last page, so the grown list does not trigger another automatic load.
+        repository.paginationStateAfterLoad = PaginationState.EndReached
+        onNodeWithText("Muat Lagi").performClick()
+
+        onNodeWithText("Morty Smith").assertIsDisplayed()
+        assertEquals(2, repository.loadNextPageCount)
+    }
+
+    @Test
+    fun endReached_showsEndOfListMessageWithoutLoading() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = listOf(rick)
+            paginationState.value = PaginationState.EndReached
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Semua karakter sudah ditampilkan").assertIsDisplayed()
+        assertEquals(0, repository.loadNextPageCount)
+    }
+
+    @Test
+    fun scrollingToEnd_triggersLoadMoreOnlyNearTheEnd() = runComposeUiTest {
+        val characters = manyCharacters(40)
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = characters
+            paginationState.value = PaginationState.HasMore
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+        waitForIdle()
+        assertEquals(0, repository.loadNextPageCount)
+
+        onNode(hasScrollAction()).performScrollToIndex(characters.lastIndex)
+        waitForIdle()
+
+        assertEquals(1, repository.loadNextPageCount)
+    }
 
     @Test
     fun whenRefreshSucceeds_showsCharacterList() = runComposeUiTest {

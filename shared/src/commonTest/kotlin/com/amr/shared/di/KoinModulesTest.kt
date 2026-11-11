@@ -1,6 +1,7 @@
 package com.amr.shared.di
 
 import com.amr.core.data.local.datasource.CharacterLocalDataSource
+import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.data.remote.dto.PageInfoDto
@@ -46,9 +47,23 @@ class KoinModulesTest {
         single<CharacterLocalDataSource> {
             object : CharacterLocalDataSource {
                 private val data = MutableStateFlow<List<Character>>(emptyList())
+                private val metadata = MutableStateFlow<CharacterPagingMetadata?>(null)
                 override fun observeCharacters(): Flow<List<Character>> = data
-                override suspend fun saveCharacters(characters: List<Character>) {
+                override fun observePagingMetadata(): Flow<CharacterPagingMetadata?> = metadata
+                override suspend fun getPagingMetadata(): CharacterPagingMetadata? = metadata.value
+                override suspend fun replaceFirstPage(
+                    characters: List<Character>,
+                    metadata: CharacterPagingMetadata
+                ) {
                     data.value = characters
+                    this.metadata.value = metadata
+                }
+                override suspend fun appendPage(
+                    characters: List<Character>,
+                    metadata: CharacterPagingMetadata
+                ) {
+                    data.value = data.value + characters
+                    this.metadata.value = metadata
                 }
             }
         }

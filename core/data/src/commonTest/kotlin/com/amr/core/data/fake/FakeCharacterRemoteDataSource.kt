@@ -5,9 +5,11 @@ import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.data.remote.dto.PageInfoDto
 import com.amr.core.network.exception.NetworkException
+import kotlinx.coroutines.CompletableDeferred
 
 class FakeCharacterRemoteDataSource : CharacterRemoteDataSource {
 
+    /** Response bawaan, dipakai untuk halaman yang tidak ada di [responses]. */
     var response = CharacterResponseDto(
         info = PageInfoDto(count = 2, pages = 1, next = null, prev = null),
         results = listOf(
@@ -28,21 +30,25 @@ class FakeCharacterRemoteDataSource : CharacterRemoteDataSource {
         )
     )
 
+    /** Response per halaman. */
+    val responses = mutableMapOf<Int, CharacterResponseDto>()
+
     /** Jika diisi, getCharacters() akan melempar exception ini. */
     var errorToThrow: Exception? = null
 
-    var callCount = 0
-        private set
+    /** Jika diisi, setiap request menunggu gate ini sebelum menjawab. */
+    var gate: CompletableDeferred<Unit>? = null
 
-    /** Halaman yang diminta pada pemanggilan terakhir. */
-    var lastRequestedPage: Int? = null
-        private set
+    /** Urutan halaman yang diminta. */
+    val requestedPages = mutableListOf<Int>()
+
+    val callCount: Int get() = requestedPages.size
 
     override suspend fun getCharacters(page: Int): CharacterResponseDto {
-        callCount++
-        lastRequestedPage = page
+        requestedPages += page
+        gate?.await()
         errorToThrow?.let { throw it }
-        return response
+        return responses[page] ?: response
     }
 
     fun failWithNoInternet() {

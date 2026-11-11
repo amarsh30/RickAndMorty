@@ -2,8 +2,11 @@ package com.amr.feature.character.presentation
 
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.model.PaginationState
 import com.amr.core.domain.repository.CharacterRepository
+import com.amr.core.domain.usecase.LoadNextPageCharactersUseCase
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
+import com.amr.core.domain.usecase.ObservePaginationStateUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import com.amr.feature.character.fake.FakeCharacterRepository
 import kotlinx.coroutines.CancellationException
@@ -13,6 +16,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -55,7 +59,9 @@ class CharacterViewModelTest {
 
     private fun createViewModel() = CharacterViewModel(
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
-        refreshCharactersUseCase = RefreshCharactersUseCase(repository)
+        refreshCharactersUseCase = RefreshCharactersUseCase(repository),
+        observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
     )
 
     @Test
@@ -278,11 +284,201 @@ class CharacterViewModelTest {
         assertNull(state.errorMessage)
     }
 
+    // --- Pagination / load-more (E6) ---
+
+    private val summer = Character(3, "Summer Smith", "Alive", "Human", "summer.png")
+
+    @Test
+    fun paginationHasMore_enablesLoadMore() = runTest(testDispatcher) {
+        repository.paginationState.value = PaginationState.HasMore
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.canLoadMore)
+        assertFalse(viewModel.uiState.value.isEndReached)
+    }
+
+    @Test
+    fun paginationEndReached_disablesLoadMoreAndMarksEnd() = runTest(testDispatcher) {
+        repository.paginationState.value = PaginationState.EndReached
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.canLoadMore)
+        assertTrue(viewModel.uiState.value.isEndReached)
+    }
+
+    @Test
+    fun loadMore_whenHasMore_appendsCharactersFromRoom() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick, morty)
+        repository.paginationState.value = PaginationState.HasMore
+        repository.nextPageResult = listOf(summer)
+        repository.paginationStateAfterLoad = PaginationState.EndReached
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty, summer), state.characters)
+        assertFalse(state.isLoadingMore)
+        assertNull(state.loadMoreErrorMessage)
+        assertTrue(state.isEndReached)
+        assertFalse(state.canLoadMore)
+        assertEquals(1, repository.loadNextPageCount)
+    }
+
+    @Test
+    fun loadMore_whileLoadingMore_isIgnored() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick)
+        repository.paginationState.value = PaginationState.HasMore
+        val gate = CompletableDeferred<Unit>()
+        repository.loadNextPageGate = gate
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isLoadingMore)
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+        assertEquals(1, repository.loadNextPageCount)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertFalse(viewModel.uiState.value.isLoadingMore)
+    }
+
+    @Test
+    fun loadMore_whenUninitializedOrEndReached_doesNothing() = runTest(testDispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        repository.paginationState.value = PaginationState.EndReached
+        advanceUntilIdle()
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        assertEquals(0, repository.loadNextPageCount)
+    }
+
+    @Test
+    fun loadMore_whileRefreshing_isIgnored() = runTest(testDispatcher) {
+        repository.characters.value = listOf(rick)
+        repository.paginationState.value = PaginationState.HasMore
+        val refreshGate = CompletableDeferred<Unit>()
+        repository.gate = refreshGate
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isRefreshing)
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        assertEquals(0, repository.loadNextPageCount)
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun loadMore_whenFails_showsFooterErrorAndKeepsList() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick, morty)
+        repository.paginationState.value = PaginationState.HasMore
+        repository.loadNextPageError = DataError.NoConnection()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty), state.characters)
+        assertEquals("Gagal memuat karakter. Periksa koneksi internet.", state.loadMoreErrorMessage)
+        // The screen-level error is untouched by a load-more failure.
+        assertNull(state.errorMessage)
+        assertFalse(state.isLoadingMore)
+        assertTrue(state.canLoadMore)
+    }
+
+    @Test
+    fun loadMore_retryAfterFailure_clearsErrorAndAppends() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick)
+        repository.paginationState.value = PaginationState.HasMore
+        repository.loadNextPageError = DataError.Timeout()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        repository.loadNextPageError = null
+        repository.nextPageResult = listOf(morty)
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty), state.characters)
+        assertNull(state.loadMoreErrorMessage)
+        assertEquals(2, repository.loadNextPageCount)
+    }
+
+    @Test
+    fun loadMore_whenCancelled_showsNoError() = runTest(testDispatcher) {
+        repository.paginationState.value = PaginationState.HasMore
+        repository.loadNextPageError = CancellationException("cancelled")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.loadMoreErrorMessage)
+        assertFalse(viewModel.uiState.value.isLoadingMore)
+    }
+
+    @Test
+    fun refresh_clearsLoadMoreError() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick)
+        repository.paginationState.value = PaginationState.HasMore
+        repository.loadNextPageError = DataError.NoConnection()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.loadMoreErrorMessage)
+    }
+
+    @Test
+    fun paginationFlowFails_disablesLoadMoreWithoutCrashing() = runTest(testDispatcher) {
+        repository.refreshResult = listOf(rick)
+        repository.paginationFlowOverride = flow { throw DataError.InvalidData() }
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.canLoadMore)
+        assertFalse(state.isEndReached)
+        assertEquals(listOf(rick), state.characters)
+    }
+
     // --- Room observation errors (E4-B) ---
 
     private fun createViewModel(repository: ControllableRepository) = CharacterViewModel(
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
-        refreshCharactersUseCase = RefreshCharactersUseCase(repository)
+        refreshCharactersUseCase = RefreshCharactersUseCase(repository),
+        observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
     )
 
     @Test
@@ -513,5 +709,11 @@ class CharacterViewModelTest {
             refreshGate?.await()
             refreshError?.let { throw it }
         }
+
+        // Pagination is not used by these tests.
+        override fun observePaginationState(): Flow<PaginationState> =
+            flowOf(PaginationState.Uninitialized)
+
+        override suspend fun loadNextPage() = Unit
     }
 }
