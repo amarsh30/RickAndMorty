@@ -6,6 +6,9 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.http.ContentType
@@ -19,6 +22,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -132,6 +136,50 @@ class CharacterRemoteDataSourceImplTest {
         }
 
         assertFailsWith<NetworkException.Serialization> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenIOException_throwsNoInternet() = runTest {
+        val dataSource = createDataSource {
+            throw IOException("offline")
+        }
+
+        assertFailsWith<NetworkException.NoInternet> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenConnectTimeout_throwsTimeout() = runTest {
+        val dataSource = createDataSource {
+            throw ConnectTimeoutException("connect timeout")
+        }
+
+        assertFailsWith<NetworkException.Timeout> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenSocketTimeout_throwsTimeout() = runTest {
+        val dataSource = createDataSource {
+            throw SocketTimeoutException("socket timeout")
+        }
+
+        assertFailsWith<NetworkException.Timeout> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenRequestTimeout_throwsTimeout() = runTest {
+        val dataSource = createDataSource {
+            throw HttpRequestTimeoutException("${ApiConfig.BASE_URL}character", 15_000)
+        }
+
+        assertFailsWith<NetworkException.Timeout> {
             dataSource.getCharacters()
         }
     }

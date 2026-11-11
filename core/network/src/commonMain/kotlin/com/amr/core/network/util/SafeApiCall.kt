@@ -2,6 +2,8 @@ package com.amr.core.network.util
 
 import com.amr.core.network.exception.NetworkException
 import io.ktor.client.call.body
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.isSuccess
@@ -45,6 +47,12 @@ suspend inline fun <reified T> safeApiCall(
         throw e
 
     } catch (e: HttpRequestTimeoutException) {
+        throw NetworkException.Timeout()
+
+    } catch (e: ConnectTimeoutException) {
+        throw NetworkException.Timeout()
+
+    } catch (e: SocketTimeoutException) {
         throw NetworkException.Timeout()
 
     } catch (e: ContentConvertException) {
