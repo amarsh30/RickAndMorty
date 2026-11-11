@@ -22,19 +22,10 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlin.stdlib)
-            implementation(libs.kotlinx.coroutines.core)
-
-            implementation(libs.androidx.lifecycle.viewmodel)
 
             implementation(compose.runtime)
             implementation(compose.foundation)
             implementation(compose.material3)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
-            implementation(libs.koin.core)
-            implementation(libs.koin.compose.viewmodel)
-
-            // Domain models dan UseCases
-            implementation(project(":core:domain"))
         }
     }
 }
