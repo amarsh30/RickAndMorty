@@ -2,8 +2,9 @@ package com.amr.core.data.repository
 
 import com.amr.core.data.fake.FakeCharacterLocalDataSource
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
+import com.amr.core.data.fake.testCharacter
+import com.amr.core.data.fake.testCharacterDto
 import com.amr.core.data.local.model.CharacterPagingMetadata
-import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.data.remote.dto.PageInfoDto
 import com.amr.core.domain.error.DataError
@@ -58,11 +59,9 @@ class CharacterRepositoryImplTest {
 
     // --- helpers ---
 
-    private fun dto(id: Int, name: String = "Character $id") =
-        CharacterDto(id, name, "Alive", "Human", "img$id.png")
+    private fun dto(id: Int, name: String = "Character $id") = testCharacterDto(id, name)
 
-    private fun character(id: Int, name: String = "Character $id") =
-        Character(id, name, "Alive", "Human", "img$id.png")
+    private fun character(id: Int, name: String = "Character $id") = testCharacter(id, name)
 
     /** Response shaped like the real API: next/prev follow [page] and [pages]. */
     private fun pageResponse(page: Int, ids: List<Int>, pages: Int = 3) = CharacterResponseDto(
@@ -93,8 +92,8 @@ class CharacterRepositoryImplTest {
         repository.refreshCharacters()
 
         val expected = listOf(
-            Character(1, "Rick Sanchez", "Alive", "Human", "https://example.com/rick.png"),
-            Character(2, "Morty Smith", "Alive", "Human", "https://example.com/morty.png")
+            testCharacter(1, "Rick Sanchez", imageUrl = "https://example.com/rick.png"),
+            testCharacter(2, "Morty Smith", imageUrl = "https://example.com/morty.png")
         )
         assertEquals(expected, repository.observeCharacters().first())
         assertEquals(listOf(1), remoteDataSource.requestedPages)

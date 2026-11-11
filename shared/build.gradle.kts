@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    // Type-safe navigation routes
+    alias(libs.plugins.kotlinSerialization)
     id("amr.kmp.test")
 }
 
@@ -43,6 +45,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            implementation(libs.navigation.compose)
 
             implementation(libs.koin.core)
             implementation(libs.ktor.client.core)

@@ -70,10 +70,66 @@ class CharacterRemoteDataSourceImplTest {
           "name": "Rick Sanchez",
           "status": "Alive",
           "species": "Human",
+          "type": "",
           "gender": "Male",
-          "image": "https://rickandmortyapi.com/api/character/avatar/1.jpeg"
+          "origin": { "name": "Earth (C-137)", "url": "https://rickandmortyapi.com/api/location/1" },
+          "location": { "name": "Citadel of Ricks", "url": "https://rickandmortyapi.com/api/location/3" },
+          "image": "https://rickandmortyapi.com/api/character/avatar/1.jpeg",
+          "episode": [
+            "https://rickandmortyapi.com/api/episode/1",
+            "https://rickandmortyapi.com/api/episode/2"
+          ],
+          "url": "https://rickandmortyapi.com/api/character/1",
+          "created": "2017-11-04T18:48:46.250Z"
         }
     """.trimIndent()
+
+    @Test
+    fun searchCharacters_sendsOnlyNonNullFiltersAsQueryParameters() = runTest {
+        var requestUrl: String? = null
+        val dataSource = createDataSource { request ->
+            requestUrl = request.url.toString()
+            respondPageJson()
+        }
+
+        dataSource.searchCharacters(name = "rick sanchez", status = "alive", species = null, gender = "male")
+
+        assertEquals(
+            "https://rickandmortyapi.com/api/character?name=rick+sanchez&status=alive&gender=male",
+            requestUrl
+        )
+    }
+
+    @Test
+    fun searchCharacters_whenNothingMatches_throwsNotFound() = runTest {
+        val dataSource = createDataSource {
+            respond(
+                content = """{ "error": "There is nothing here" }""",
+                status = HttpStatusCode.NotFound,
+                headers = jsonHeaders
+            )
+        }
+
+        assertFailsWith<NetworkException.NotFound> {
+            dataSource.searchCharacters(name = "zzz", status = null, species = null, gender = null)
+        }
+    }
+
+    @Test
+    fun getCharacter_requestsCharacterPathAndParsesDetail() = runTest {
+        var requestPath: String? = null
+        val dataSource = createDataSource { request ->
+            requestPath = request.url.encodedPath
+            respond(content = rickJson, status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+
+        val dto = dataSource.getCharacter(1)
+
+        assertEquals("/api/character/1", requestPath)
+        assertEquals("Male", dto.gender)
+        assertEquals("https://rickandmortyapi.com/api/location/3", dto.location.url)
+        assertEquals(2, dto.episode.size)
+    }
 
     /** Builds a list response shaped like the real API, with [infoJson] as the `info` object. */
     private fun pageJson(infoJson: String): String = """

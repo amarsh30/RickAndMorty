@@ -3,6 +3,7 @@ package com.amr.core.database.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import androidx.room.Upsert
 import com.amr.core.database.entity.CharacterEntity
 import com.amr.core.database.entity.CharacterPagingStateEntity
@@ -21,6 +22,13 @@ interface CharacterDao {
 
     @Query("DELETE FROM characters")
     suspend fun deleteAllCharacters()
+
+    @Query("SELECT * FROM characters WHERE id = :id")
+    fun observeCharacter(id: Int): Flow<CharacterEntity?>
+
+    /** Updates the row only if it is already in the list cache; returns the number of rows updated. */
+    @Update
+    suspend fun updateCharacter(character: CharacterEntity): Int
 
     /** Returns null when no page has been stored yet. */
     @Query("SELECT * FROM character_paging_state WHERE id = ${CharacterPagingStateEntity.SINGLE_ROW_ID}")

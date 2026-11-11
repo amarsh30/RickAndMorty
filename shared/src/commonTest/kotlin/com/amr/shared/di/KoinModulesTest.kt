@@ -1,6 +1,7 @@
 package com.amr.shared.di
 
 import com.amr.core.data.local.datasource.CharacterLocalDataSource
+import com.amr.core.data.local.datasource.CharacterLookupLocalDataSource
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
 import com.amr.core.data.remote.dto.CharacterResponseDto
@@ -9,17 +10,22 @@ import com.amr.core.domain.model.Character
 import com.amr.core.domain.repository.CharacterRepository
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
+import com.amr.feature.character.detail.CharacterDetailViewModel
+import com.amr.feature.character.favorite.FavoritesViewModel
 import com.amr.feature.character.presentation.CharacterViewModel
+import com.amr.feature.character.search.CharacterSearchViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
 import org.koin.core.module.Module
+import org.koin.core.parameter.parametersOf
 import org.koin.dsl.module
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -38,10 +44,18 @@ class KoinModulesTest {
     private val fakeOverrides: Module = module {
         single<CharacterRemoteDataSource> {
             object : CharacterRemoteDataSource {
-                override suspend fun getCharacters(page: Int) = CharacterResponseDto(
+                private val empty = CharacterResponseDto(
                     info = PageInfoDto(count = 0, pages = 0, next = null, prev = null),
                     results = emptyList()
                 )
+                override suspend fun getCharacters(page: Int) = empty
+                override suspend fun searchCharacters(
+                    name: String?,
+                    status: String?,
+                    species: String?,
+                    gender: String?
+                ) = empty
+                override suspend fun getCharacter(id: Int) = error("not used")
             }
         }
         single<CharacterLocalDataSource> {
@@ -65,6 +79,22 @@ class KoinModulesTest {
                     data.value = data.value + characters
                     this.metadata.value = metadata
                 }
+            }
+        }
+        single<CharacterLookupLocalDataSource> {
+            object : CharacterLookupLocalDataSource {
+                override fun observeSearch(
+                    name: String?,
+                    status: String?,
+                    species: String?,
+                    gender: String?
+                ): Flow<List<Character>> = flowOf(emptyList())
+                override fun observeCharacter(id: Int): Flow<Character?> = flowOf(null)
+                override suspend fun saveFetchedCharacters(characters: List<Character>) = Unit
+                override fun observeFavorites(): Flow<List<Character>> = flowOf(emptyList())
+                override fun observeIsFavorite(id: Int): Flow<Boolean> = flowOf(false)
+                override suspend fun addFavorite(character: Character) = Unit
+                override suspend fun removeFavorite(id: Int) = Unit
             }
         }
     }
@@ -91,6 +121,9 @@ class KoinModulesTest {
         assertNotNull(koin.get<ObserveCharactersUseCase>())
         assertNotNull(koin.get<RefreshCharactersUseCase>())
         assertNotNull(koin.get<CharacterViewModel>())
+        assertNotNull(koin.get<CharacterSearchViewModel>())
+        assertNotNull(koin.get<FavoritesViewModel>())
+        assertNotNull(koin.get<CharacterDetailViewModel> { parametersOf(1) })
     }
 
     @Test

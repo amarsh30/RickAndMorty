@@ -202,20 +202,9 @@ class CharacterViewModel(
         return if (characters.isEmpty()) reason else STALE_DATA_MESSAGE
     }
 
-    private fun DataError.toMessage(): String {
-        return when (this) {
-            is DataError.NoConnection -> "Gagal memuat karakter. Periksa koneksi internet."
-            is DataError.Timeout -> "Server terlalu lama merespons. Coba lagi."
-            is DataError.Unauthorized -> "Akses ke data ditolak."
-            is DataError.NotFound -> "Data karakter tidak ditemukan."
-            is DataError.Server -> "Server sedang bermasalah. Coba lagi nanti."
-            is DataError.InvalidData -> "Data dari server tidak dapat dibaca."
-            is DataError.Unknown -> GENERIC_ERROR_MESSAGE
-        }
-    }
+    private fun DataError.toMessage(): String = toUserMessage()
 
     private companion object {
-        const val GENERIC_ERROR_MESSAGE = "Terjadi kesalahan. Coba lagi."
         const val STALE_DATA_MESSAGE = "Gagal memperbarui data. Menampilkan data tersimpan."
         const val DATABASE_ERROR_MESSAGE = "Gagal membaca data tersimpan. Coba lagi."
     }

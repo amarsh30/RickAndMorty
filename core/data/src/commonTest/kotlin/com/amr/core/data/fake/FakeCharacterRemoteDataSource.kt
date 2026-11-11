@@ -13,20 +13,8 @@ class FakeCharacterRemoteDataSource : CharacterRemoteDataSource {
     var response = CharacterResponseDto(
         info = PageInfoDto(count = 2, pages = 1, next = null, prev = null),
         results = listOf(
-            CharacterDto(
-                id = 1,
-                name = "Rick Sanchez",
-                status = "Alive",
-                species = "Human",
-                imageUrl = "https://example.com/rick.png"
-            ),
-            CharacterDto(
-                id = 2,
-                name = "Morty Smith",
-                status = "Alive",
-                species = "Human",
-                imageUrl = "https://example.com/morty.png"
-            )
+            testCharacterDto(1, "Rick Sanchez", imageUrl = "https://example.com/rick.png"),
+            testCharacterDto(2, "Morty Smith", imageUrl = "https://example.com/morty.png")
         )
     )
 
@@ -49,6 +37,37 @@ class FakeCharacterRemoteDataSource : CharacterRemoteDataSource {
         gate?.await()
         errorToThrow?.let { throw it }
         return responses[page] ?: response
+    }
+
+    // --- search ---
+
+    data class SearchQuery(val name: String?, val status: String?, val species: String?, val gender: String?)
+
+    val searchQueries = mutableListOf<SearchQuery>()
+    var searchResponse: CharacterResponseDto = response
+    var searchError: Exception? = null
+
+    override suspend fun searchCharacters(
+        name: String?,
+        status: String?,
+        species: String?,
+        gender: String?
+    ): CharacterResponseDto {
+        searchQueries += SearchQuery(name, status, species, gender)
+        searchError?.let { throw it }
+        return searchResponse
+    }
+
+    // --- detail ---
+
+    val requestedCharacterIds = mutableListOf<Int>()
+    val characters = mutableMapOf<Int, CharacterDto>()
+    var characterError: Exception? = null
+
+    override suspend fun getCharacter(id: Int): CharacterDto {
+        requestedCharacterIds += id
+        characterError?.let { throw it }
+        return characters[id] ?: throw NetworkException.NotFound()
     }
 
     fun failWithNoInternet() {

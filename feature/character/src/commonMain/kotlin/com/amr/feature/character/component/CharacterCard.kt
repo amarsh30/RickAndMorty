@@ -20,11 +20,11 @@ fun CharacterCard(
     name: String,
     status: String,
     imageUrl: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth()
-    ) {
+    val cardModifier = modifier.fillMaxWidth()
+    val content: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -50,5 +50,12 @@ fun CharacterCard(
                 )
             }
         }
+    }
+
+    // A clickable card is announced as a button and has a 48dp+ touch target.
+    if (onClick != null) {
+        Card(onClick = onClick, modifier = cardModifier) { content() }
+    } else {
+        Card(modifier = cardModifier) { content() }
     }
 }

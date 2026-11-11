@@ -1,0 +1,33 @@
+package com.amr.core.data.repository
+
+import com.amr.core.data.error.toDataError
+import com.amr.core.data.local.datasource.CharacterLookupLocalDataSource
+import com.amr.core.data.mapper.toDomain
+import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
+import com.amr.core.domain.error.DataError
+import com.amr.core.domain.model.Character
+import com.amr.core.domain.repository.CharacterDetailRepository
+import com.amr.core.network.exception.NetworkException
+import kotlinx.coroutines.flow.Flow
+
+class CharacterDetailRepositoryImpl(
+    private val remoteDataSource: CharacterRemoteDataSource,
+    private val localDataSource: CharacterLookupLocalDataSource
+) : CharacterDetailRepository {
+
+    override fun observeCharacter(id: Int): Flow<Character?> =
+        localDataSource.observeCharacter(id)
+
+    override suspend fun refreshCharacter(id: Int) {
+        val dto = try {
+            remoteDataSource.getCharacter(id)
+        } catch (e: NetworkException) {
+            throw e.toDataError()
+        }
+
+        // Guards against a response for a different resource.
+        if (dto.id != id) throw DataError.InvalidData()
+
+        localDataSource.saveFetchedCharacters(listOf(dto.toDomain()))
+    }
+}

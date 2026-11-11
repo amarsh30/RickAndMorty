@@ -5,6 +5,7 @@ import com.amr.core.database.entity.CharacterEntity
 import com.amr.core.database.entity.CharacterPagingStateEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 
 /**
  * In-memory [CharacterDao] that stores rows exactly as given, including
@@ -26,6 +27,15 @@ class FakeCharacterDao : CharacterDao {
 
     override suspend fun deleteAllCharacters() {
         characters.value = emptyList()
+    }
+
+    override fun observeCharacter(id: Int): Flow<CharacterEntity?> =
+        characters.map { list -> list.firstOrNull { it.id == id } }
+
+    override suspend fun updateCharacter(character: CharacterEntity): Int {
+        if (characters.value.none { it.id == character.id }) return 0
+        characters.value = characters.value.map { if (it.id == character.id) character else it }
+        return 1
     }
 
     override suspend fun getPagingState(): CharacterPagingStateEntity? = pagingState.value

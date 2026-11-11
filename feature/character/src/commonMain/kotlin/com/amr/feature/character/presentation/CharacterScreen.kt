@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.filter
 
 @Composable
 fun CharacterScreen(
+    onCharacterClick: (Int) -> Unit = {},
+    onSearchClick: () -> Unit = {},
+    onFavoritesClick: () -> Unit = {},
     viewModel: CharacterViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -37,7 +40,10 @@ fun CharacterScreen(
     CharacterContent(
         state = uiState,
         onRetry = viewModel::refreshCharacters,
-        onLoadMore = viewModel::loadMoreCharacters
+        onLoadMore = viewModel::loadMoreCharacters,
+        onCharacterClick = onCharacterClick,
+        onSearchClick = onSearchClick,
+        onFavoritesClick = onFavoritesClick
     )
 }
 
@@ -52,17 +58,27 @@ private const val LOAD_MORE_THRESHOLD = 5
 private fun CharacterContent(
     state: CharacterUiState,
     onRetry: () -> Unit,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    onCharacterClick: (Int) -> Unit,
+    onSearchClick: () -> Unit,
+    onFavoritesClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Keeps the header out of the status bar, where taps would not reach it.
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(16.dp)
     ) {
-        Text(
-            text = "Rick and Morty Characters",
-            style = MaterialTheme.typography.headlineSmall
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Rick and Morty Characters",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onSearchClick) { Text("Cari") }
+            TextButton(onClick = onFavoritesClick) { Text("Favorit") }
+        }
 
         Spacer(Modifier.height(16.dp))
 
@@ -136,7 +152,8 @@ private fun CharacterContent(
                             CharacterCard(
                                 name = character.name,
                                 status = character.status,
-                                imageUrl = character.imageUrl
+                                imageUrl = character.imageUrl,
+                                onClick = { onCharacterClick(character.id) }
                             )
                         }
 
