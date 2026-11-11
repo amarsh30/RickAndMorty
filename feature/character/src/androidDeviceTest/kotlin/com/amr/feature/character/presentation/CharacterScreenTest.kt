@@ -1,7 +1,9 @@
 package com.amr.feature.character.presentation
 
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
@@ -10,6 +12,7 @@ import com.amr.core.domain.model.Character
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import com.amr.feature.character.fake.FakeCharacterRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
 
 /**
@@ -41,6 +44,43 @@ class CharacterScreenTest {
 
         onNodeWithText("Rick and Morty Characters").assertIsDisplayed()
         onNodeWithText("Rick Sanchez").assertIsDisplayed()
+        onNodeWithText("Morty Smith").assertIsDisplayed()
+    }
+
+    @Test
+    fun whenDatabaseEmptyAndInitialRefreshRunning_showsLoadingNotEmptyState() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            this.gate = gate
+            refreshResult = listOf(rick)
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
+        onNodeWithText("Belum ada karakter").assertDoesNotExist()
+
+        gate.complete(Unit)
+
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+    }
+
+    @Test
+    fun whenCacheExistsAndRefreshRunning_keepsListAndShowsRefreshIndicator() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            characters.value = listOf(rick)
+            this.gate = gate
+            refreshResult = listOf(rick, morty)
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+        onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
+
+        gate.complete(Unit)
+
         onNodeWithText("Morty Smith").assertIsDisplayed()
     }
 

@@ -47,7 +47,8 @@ private fun CharacterContent(
         Spacer(Modifier.height(16.dp))
 
         when {
-            state.isLoading -> {
+            state.isLoading ||
+                    (state.characters.isEmpty() && state.isRefreshing) -> {
                 AppLoading(
                     modifier = Modifier.fillMaxSize()
                 )
