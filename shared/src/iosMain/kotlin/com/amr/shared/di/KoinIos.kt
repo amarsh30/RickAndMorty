@@ -5,7 +5,7 @@ import org.koin.core.context.startKoin
 fun initKoinIos() {
     startKoin {
         modules(
-            commonModules + iosDatabaseModule
+            commonModules + iosDatabaseModule + iosConnectivityModule
         )
     }
 }

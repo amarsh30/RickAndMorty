@@ -7,13 +7,18 @@ import com.amr.core.data.fake.FakeLocationRemoteDataSource
 import com.amr.core.data.fake.pageInfo
 import com.amr.core.data.fake.testEpisodeDto
 import com.amr.core.data.fake.testLocationDto
+import com.amr.core.data.fake.testSingleFlight
 import com.amr.core.data.remote.dto.EpisodeResponseDto
 import com.amr.core.data.remote.dto.LocationResponseDto
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Location
 import com.amr.core.domain.model.PaginationState
 import com.amr.core.network.exception.NetworkException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -22,6 +27,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class LocationEpisodeRepositoriesTest {
 
     private lateinit var locationRemote: FakeLocationRemoteDataSource
@@ -35,10 +41,10 @@ class LocationEpisodeRepositoriesTest {
     fun setUp() {
         locationRemote = FakeLocationRemoteDataSource()
         locationDao = FakeLocationDao()
-        locations = LocationRepositoryImpl(locationRemote, locationDao)
+        locations = LocationRepositoryImpl(locationRemote, locationDao, testSingleFlight())
         episodeRemote = FakeEpisodeRemoteDataSource()
         episodeDao = FakeEpisodeDao()
-        episodes = EpisodeRepositoryImpl(episodeRemote, episodeDao)
+        episodes = EpisodeRepositoryImpl(episodeRemote, episodeDao, testSingleFlight())
 
         locationRemote.pages[1] = LocationResponseDto(pageInfo(1, 2), listOf(testLocationDto(1, 3, 4), testLocationDto(2)))
         locationRemote.pages[2] = LocationResponseDto(pageInfo(2, 2), listOf(testLocationDto(21, 5)))
@@ -153,6 +159,39 @@ class LocationEpisodeRepositoriesTest {
         locations.refreshLocation(7)
 
         assertEquals(listOf(3, 4), locations.observeResidentIds(7).first())
+    }
+
+    // --- single-flight ---
+
+    @Test
+    fun concurrentRefreshes_manualAndAutomatic_makeOneRequest() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        locationRemote.gate = gate
+
+        val manual = async { locations.refreshLocations() }
+        val automatic = async { locations.refreshLocations() }
+        runCurrent()
+        gate.complete(Unit)
+        manual.await()
+        automatic.await()
+
+        assertEquals(listOf(1), locationRemote.requestedPages)
+        assertEquals(2, locations.observeLocations().first().size)
+    }
+
+    @Test
+    fun concurrentDetailRefreshes_sameIdShare_differentIdsDoNot() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        locationRemote.gate = gate
+        locationRemote.details[1] = testLocationDto(1)
+        locationRemote.details[2] = testLocationDto(2)
+
+        val calls = listOf(1, 1, 2).map { id -> async { locations.refreshLocation(id) } }
+        runCurrent()
+        gate.complete(Unit)
+        calls.forEach { it.await() }
+
+        assertEquals(listOf(1, 2), locationRemote.requestedDetails)
     }
 
     // --- episodes ---

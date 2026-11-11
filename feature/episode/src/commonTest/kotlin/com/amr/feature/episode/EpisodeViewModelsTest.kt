@@ -12,6 +12,9 @@ import com.amr.core.domain.usecase.ObserveEpisodeCharacterIdsUseCase
 import com.amr.core.domain.usecase.ObserveEpisodeDetailUseCase
 import com.amr.core.domain.usecase.ObserveEpisodePaginationStateUseCase
 import com.amr.core.domain.usecase.ObserveEpisodesUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
+import com.amr.core.domain.model.NetworkStatus
+import com.amr.core.domain.repository.ConnectivityObserver
 import com.amr.core.domain.usecase.ObserveRelatedCharactersUseCase
 import com.amr.core.domain.usecase.RefreshEpisodeDetailUseCase
 import com.amr.core.domain.usecase.RefreshEpisodesUseCase
@@ -65,7 +68,11 @@ class EpisodeViewModelsTest {
         }
         override fun observeEpisode(id: Int): Flow<Episode?> = details.map { it[id] }
         override fun observeCharacterIds(id: Int): Flow<List<Int>> = characterIds.map { it[id].orEmpty() }
-        override suspend fun refreshEpisode(id: Int) = Unit
+        var detailRefreshCalls = 0
+        override suspend fun refreshEpisode(id: Int) {
+            detailRefreshCalls++
+            refreshError?.let { throw it }
+        }
     }
 
     private class FakeRelatedRepository : RelatedCharacterRepository {
@@ -106,8 +113,16 @@ class EpisodeViewModelsTest {
         ObserveEpisodesUseCase(episodes),
         ObserveEpisodePaginationStateUseCase(episodes),
         RefreshEpisodesUseCase(episodes),
-        LoadNextEpisodesPageUseCase(episodes)
+        LoadNextEpisodesPageUseCase(episodes),
+        ObserveConnectivityRestoredUseCase(connectivity)
     )
+
+    private class FakeConnectivity : ConnectivityObserver {
+        val status = MutableStateFlow(NetworkStatus(isConnected = true, isInternetValidated = true))
+        override val networkStatus = status
+    }
+
+    private val connectivity = FakeConnectivity()
 
     private fun detailViewModel(id: Int = 1) = EpisodeDetailViewModel(
         id,
@@ -115,8 +130,31 @@ class EpisodeViewModelsTest {
         ObserveEpisodeCharacterIdsUseCase(episodes),
         RefreshEpisodeDetailUseCase(episodes),
         ObserveRelatedCharactersUseCase(related),
-        FetchRelatedCharactersUseCase(related)
+        FetchRelatedCharactersUseCase(related),
+        ObserveConnectivityRestoredUseCase(connectivity)
     )
+
+    @Test
+    fun detail_offlineRefresh_isRetriedOnReconnect_whileVisible_only() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.refreshError = DataError.NoConnection()
+        val visible = detailViewModel()
+        visible.setVisible(true)
+        val hidden = detailViewModel(id = 2)
+        advanceUntilIdle()
+        assertEquals(2, episodes.detailRefreshCalls)
+
+        episodes.refreshError = null
+        connectivity.status.value = NetworkStatus.Disconnected
+        advanceUntilIdle()
+        connectivity.status.value = NetworkStatus(isConnected = true, isInternetValidated = true)
+        advanceUntilIdle()
+
+        // Only the visible detail refreshed again.
+        assertEquals(3, episodes.detailRefreshCalls)
+        assertNull(visible.uiState.value.errorMessage)
+        assertNotNull(hidden.uiState.value.errorMessage)
+    }
 
     @Test
     fun list_loadsAndPaginatesOnce() = runTest(dispatcher) {

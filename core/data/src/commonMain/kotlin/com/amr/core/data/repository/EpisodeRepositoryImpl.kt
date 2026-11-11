@@ -1,5 +1,6 @@
 package com.amr.core.data.repository
 
+import com.amr.core.data.concurrency.SingleFlight
 import com.amr.core.data.error.toDataError
 import com.amr.core.data.mapper.toCharacterLinks
 import com.amr.core.data.mapper.toDomain
@@ -9,6 +10,7 @@ import com.amr.core.data.remote.dto.EpisodeDto
 import com.amr.core.data.remote.paging.PageMetadata
 import com.amr.core.data.remote.paging.paginationStateOf
 import com.amr.core.data.remote.paging.toValidatedPageMetadata
+import com.amr.core.data.remote.retry.RemoteCalls
 import com.amr.core.database.dao.EpisodeDao
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Episode
@@ -22,7 +24,10 @@ import kotlinx.coroutines.sync.withLock
 
 class EpisodeRepositoryImpl(
     private val remoteDataSource: EpisodeRemoteDataSource,
-    private val episodeDao: EpisodeDao
+    private val episodeDao: EpisodeDao,
+    /** Required: production passes the app-scoped instance from Koin. */
+    private val singleFlight: SingleFlight,
+    private val remoteCalls: RemoteCalls = RemoteCalls()
 ) : EpisodeRepository {
 
     /** Serializes refresh and load-more so metadata is never read while another write is pending. */
@@ -34,24 +39,28 @@ class EpisodeRepositoryImpl(
     override fun observePaginationState(): Flow<PaginationState> =
         episodeDao.observePagingState().map { paginationStateOf(it != null, it?.nextPage) }
 
-    override suspend fun refreshEpisodes() {
+    /** Concurrent refreshes (manual and automatic) share one request. */
+    override suspend fun refreshEpisodes() = singleFlight.run("episode:refresh") {
         pagingMutex.withLock { replaceWithFirstPage() }
     }
 
-    override suspend fun loadNextPage() {
-        pagingMutex.withLock {
-            // Read inside the lock so a refresh that just finished is taken into account.
-            val state = episodeDao.getPagingState() ?: return replaceWithFirstPage()
-            val nextPage = state.nextPage ?: return
+    override suspend fun loadNextPage() = singleFlight.run("episode:loadNextPage") {
+        pagingMutex.withLock { loadNextPageLocked() }
+    }
 
-            val (episodes, metadata) = fetchPage(nextPage)
-            episodeDao.appendPage(
-                episodes = episodes.map { it.toEntity() },
-                links = episodes.flatMap { it.toCharacterLinks() },
-                nextPage = metadata.nextPage,
-                totalPages = metadata.totalPages
-            )
-        }
+    /** Must run under [pagingMutex]. */
+    private suspend fun loadNextPageLocked() {
+        // Read inside the lock so a refresh that just finished is taken into account.
+        val state = episodeDao.getPagingState() ?: return replaceWithFirstPage()
+        val nextPage = state.nextPage ?: return
+
+        val (episodes, metadata) = fetchPage(nextPage)
+        episodeDao.appendPage(
+            episodes = episodes.map { it.toEntity() },
+            links = episodes.flatMap { it.toCharacterLinks() },
+            nextPage = metadata.nextPage,
+            totalPages = metadata.totalPages
+        )
     }
 
     override fun observeEpisode(id: Int): Flow<Episode?> =
@@ -60,9 +69,9 @@ class EpisodeRepositoryImpl(
     override fun observeCharacterIds(id: Int): Flow<List<Int>> =
         episodeDao.observeCharacterIds(id)
 
-    override suspend fun refreshEpisode(id: Int) {
+    override suspend fun refreshEpisode(id: Int) = singleFlight.run("episode:detail:$id") {
         val dto = try {
-            remoteDataSource.getEpisode(id)
+            remoteCalls.get { remoteDataSource.getEpisode(id) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }
@@ -85,7 +94,7 @@ class EpisodeRepositoryImpl(
 
     private suspend fun fetchPage(page: Int): Pair<List<EpisodeDto>, PageMetadata> {
         val response = try {
-            remoteDataSource.getEpisodes(page)
+            remoteCalls.get { remoteDataSource.getEpisodes(page) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }

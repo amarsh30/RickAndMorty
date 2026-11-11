@@ -2,6 +2,7 @@ package com.amr.core.data.local.datasource
 
 import com.amr.core.data.fake.FakeCharacterDao
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
+import com.amr.core.data.fake.testSingleFlight
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.repository.CharacterRepositoryImpl
 import com.amr.core.database.entity.CharacterEntity
@@ -41,7 +42,7 @@ class CharacterPagingMetadataMappingTest {
         dao = FakeCharacterDao()
         remoteDataSource = FakeCharacterRemoteDataSource()
         localDataSource = CharacterLocalDataSourceImpl(dao)
-        repository = CharacterRepositoryImpl(remoteDataSource, localDataSource)
+        repository = CharacterRepositoryImpl(remoteDataSource, localDataSource, testSingleFlight())
     }
 
     @Test

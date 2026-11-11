@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.Episode
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.FetchRelatedCharactersUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.ObserveEpisodeCharacterIdsUseCase
 import com.amr.core.domain.usecase.ObserveEpisodeDetailUseCase
 import com.amr.core.domain.usecase.ObserveRelatedCharactersUseCase
 import com.amr.core.domain.usecase.RefreshEpisodeDetailUseCase
 import com.amr.feature.episode.presentation.DATABASE_ERROR_MESSAGE
+import com.amr.feature.episode.presentation.isConnectivityProblem
 import com.amr.feature.episode.presentation.toUserMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,7 +54,8 @@ class EpisodeDetailViewModel(
     private val observeCharacterIds: ObserveEpisodeCharacterIdsUseCase,
     private val refreshEpisodeDetail: RefreshEpisodeDetailUseCase,
     private val observeRelatedCharacters: ObserveRelatedCharactersUseCase,
-    private val fetchRelatedCharacters: FetchRelatedCharactersUseCase
+    private val fetchRelatedCharacters: FetchRelatedCharactersUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(EpisodeDetailUiState())
@@ -63,10 +67,26 @@ class EpisodeDetailViewModel(
         ids.take(size)
     }.distinctUntilChanged()
 
+    /** Operations that last failed for a connectivity reason; retried once the network returns. */
+    private var refreshPending = false
+    private var charactersPending = false
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
     init {
         observeDetail()
         observeCharacters()
         refresh()
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
+    }
+
+    /** Called by the screen: recovery only runs while the detail is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    internal fun onConnectivityRestored() {
+        if (refreshPending) refresh()
+        // Retries the failed character window only; the window does not grow.
+        if (charactersPending) loadMoreCharacters()
     }
 
     private fun observeDetail() {
@@ -105,9 +125,11 @@ class EpisodeDetailViewModel(
         _uiState.update { it.copy(isLoadingCharacters = true, charactersErrorMessage = null) }
         try {
             fetchRelatedCharacters(ids)
+            charactersPending = false
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
+            charactersPending = exception.isConnectivityProblem
             _uiState.update { it.copy(charactersErrorMessage = exception.toUserMessage()) }
         } finally {
             _uiState.update { it.copy(isLoadingCharacters = false) }
@@ -122,9 +144,11 @@ class EpisodeDetailViewModel(
         viewModelScope.launch {
             try {
                 refreshEpisodeDetail(episodeId)
+                refreshPending = false
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
+                refreshPending = exception.isConnectivityProblem
                 _uiState.update { it.copy(errorMessage = exception.toUserMessage()) }
             } finally {
                 _uiState.update { it.copy(isRefreshing = false, isLoading = false) }

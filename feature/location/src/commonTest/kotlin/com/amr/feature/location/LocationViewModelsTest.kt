@@ -60,8 +60,18 @@ class LocationViewModelsTest {
         ObserveLocationsUseCase(locations),
         ObserveLocationPaginationStateUseCase(locations),
         RefreshLocationsUseCase(locations),
-        LoadNextLocationsPageUseCase(locations)
+        LoadNextLocationsPageUseCase(locations),
+        com.amr.feature.location.fake.connectivityRestored(connectivity)
     )
+
+    private val connectivity = com.amr.feature.location.fake.FakeConnectivityObserver()
+
+    private fun kotlinx.coroutines.test.TestScope.reconnect() {
+        connectivity.status.value = com.amr.feature.location.fake.OFFLINE
+        advanceUntilIdle()
+        connectivity.status.value = com.amr.feature.location.fake.ONLINE
+        advanceUntilIdle()
+    }
 
     private fun detailViewModel(id: Int = 3) = LocationDetailViewModel(
         id,
@@ -69,8 +79,95 @@ class LocationViewModelsTest {
         ObserveLocationResidentIdsUseCase(locations),
         RefreshLocationDetailUseCase(locations),
         ObserveRelatedCharactersUseCase(related),
-        FetchRelatedCharactersUseCase(related)
+        FetchRelatedCharactersUseCase(related),
+        com.amr.feature.location.fake.connectivityRestored(connectivity)
     )
+
+    // --- connectivity recovery ---
+
+    @Test
+    fun list_offlineRefresh_isRetriedOnReconnect_whileVisible() = runTest(dispatcher) {
+        locations.refreshError = DataError.NoConnection()
+        val viewModel = listViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        locations.refreshError = null
+        locations.refreshResult = listOf(earth)
+        reconnect()
+
+        assertEquals(2, locations.refreshCalls)
+        assertEquals(listOf(earth), viewModel.uiState.value.locations)
+    }
+
+    @Test
+    fun list_tabSwitchWhileOffline_recoversWhenReturningOnline() = runTest(dispatcher) {
+        connectivity.status.value = com.amr.feature.location.fake.OFFLINE
+        locations.refreshError = DataError.NoConnection()
+        val viewModel = listViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        viewModel.setVisible(false)
+        locations.refreshError = null
+        locations.refreshResult = listOf(earth)
+        connectivity.status.value = com.amr.feature.location.fake.ONLINE
+        advanceUntilIdle()
+        assertEquals(1, locations.refreshCalls)
+
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        assertEquals(2, locations.refreshCalls)
+        assertEquals(listOf(earth), viewModel.uiState.value.locations)
+    }
+
+    @Test
+    fun detail_returningWithFailedResidentWindow_retriesThatWindowOnly() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to (1..30).toList())
+        related.fetchError = DataError.NoConnection()
+        val viewModel = detailViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        viewModel.setVisible(false)
+        related.fetchError = null
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        assertEquals(listOf((1..20).toList(), (1..20).toList()), related.fetchCalls)
+        assertNull(viewModel.uiState.value.residentsErrorMessage)
+    }
+
+    @Test
+    fun list_serverError_isNotRetriedOnReconnect() = runTest(dispatcher) {
+        locations.refreshError = DataError.Server()
+        val viewModel = listViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        reconnect()
+
+        assertEquals(1, locations.refreshCalls)
+    }
+
+    @Test
+    fun detail_offlineResidentWindow_isRetriedWithoutWidening() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to (1..30).toList())
+        related.fetchError = DataError.NoConnection()
+        val viewModel = detailViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        related.fetchError = null
+        reconnect()
+
+        assertEquals(listOf((1..20).toList(), (1..20).toList()), related.fetchCalls)
+        assertEquals(20, viewModel.uiState.value.residents.size)
+        assertNull(viewModel.uiState.value.residentsErrorMessage)
+    }
 
     // --- list ---
 

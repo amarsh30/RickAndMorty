@@ -16,6 +16,7 @@ import com.amr.core.database.entity.LocationEntity
 import com.amr.core.database.entity.LocationPagingStateEntity
 import com.amr.core.database.entity.LocationResidentEntity
 import com.amr.core.network.exception.NetworkException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -49,14 +50,20 @@ class FakeLocationRemoteDataSource : LocationRemoteDataSource {
     val details = mutableMapOf<Int, LocationDto>()
     var error: Exception? = null
     val requestedPages = mutableListOf<Int>()
+    val requestedDetails = mutableListOf<Int>()
+    /** When set, every request waits for it before answering. */
+    var gate: CompletableDeferred<Unit>? = null
 
     override suspend fun getLocations(page: Int): LocationResponseDto {
         requestedPages += page
+        gate?.await()
         error?.let { throw it }
         return pages[page] ?: throw NetworkException.NotFound()
     }
 
     override suspend fun getLocation(id: Int): LocationDto {
+        requestedDetails += id
+        gate?.await()
         error?.let { throw it }
         return details[id] ?: throw NetworkException.NotFound()
     }

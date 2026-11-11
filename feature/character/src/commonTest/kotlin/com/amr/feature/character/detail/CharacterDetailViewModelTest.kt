@@ -41,10 +41,12 @@ class CharacterDetailViewModelTest {
         val cache = MutableStateFlow<Map<Int, Character>>(emptyMap())
         var remote: Character? = null
         var error: Exception? = null
+        var refreshCalls = 0
 
         override fun observeCharacter(id: Int): Flow<Character?> = cache.map { it[id] }
 
         override suspend fun refreshCharacter(id: Int) {
+            refreshCalls++
             error?.let { throw it }
             remote?.let { cache.value = cache.value + (id to it) }
         }
@@ -83,8 +85,63 @@ class CharacterDetailViewModelTest {
         observeCharacterDetail = ObserveCharacterDetailUseCase(detailRepository),
         refreshCharacterDetail = RefreshCharacterDetailUseCase(detailRepository),
         observeIsFavorite = ObserveIsFavoriteUseCase(favoriteRepository),
-        setFavorite = SetFavoriteUseCase(favoriteRepository)
+        setFavorite = SetFavoriteUseCase(favoriteRepository),
+        connectivityRestored = com.amr.feature.character.fake.connectivityRestored(connectivity)
     )
+
+    private val connectivity = com.amr.feature.character.fake.FakeConnectivityObserver()
+
+    private fun kotlinx.coroutines.test.TestScope.reconnect() {
+        connectivity.status.value = com.amr.feature.character.fake.OFFLINE
+        advanceUntilIdle()
+        connectivity.status.value = com.amr.feature.character.fake.ONLINE
+        advanceUntilIdle()
+    }
+
+    // --- connectivity recovery ---
+
+    @Test
+    fun offlineRefresh_isRepeatedOnReconnect_whileVisible() = runTest(testDispatcher) {
+        detailRepository.error = DataError.NoConnection()
+        val viewModel = createViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        detailRepository.error = null
+        detailRepository.remote = rickDetail
+        reconnect()
+
+        assertEquals(2, detailRepository.refreshCalls)
+        assertEquals(rickDetail, viewModel.uiState.value.character)
+        assertNull(viewModel.uiState.value.errorMessage)
+
+        // Already recovered: a later reconnect does not refresh again.
+        reconnect()
+        assertEquals(2, detailRepository.refreshCalls)
+    }
+
+    @Test
+    fun hiddenScreen_doesNotRecover() = runTest(testDispatcher) {
+        detailRepository.error = DataError.NoConnection()
+        createViewModel()
+        advanceUntilIdle()
+
+        reconnect()
+
+        assertEquals(1, detailRepository.refreshCalls)
+    }
+
+    @Test
+    fun nonConnectivityFailure_isNotRetriedAutomatically() = runTest(testDispatcher) {
+        detailRepository.error = DataError.NotFound()
+        val viewModel = createViewModel()
+        viewModel.setVisible(true)
+        advanceUntilIdle()
+
+        reconnect()
+
+        assertEquals(1, detailRepository.refreshCalls)
+    }
 
     @Test
     fun cachedCharacter_isUpdatedWithFetchedDetails() = runTest(testDispatcher) {

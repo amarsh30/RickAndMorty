@@ -6,6 +6,7 @@ import com.amr.core.data.fake.FakeFavoriteCharacterDao
 import com.amr.core.data.fake.FakeSearchCharacterDao
 import com.amr.core.data.fake.testCharacter
 import com.amr.core.data.fake.testCharacterDto
+import com.amr.core.data.fake.testSingleFlight
 import com.amr.core.data.local.datasource.CharacterLookupLocalDataSourceImpl
 import com.amr.core.data.mapper.toEntity
 import com.amr.core.data.mapper.toFavoriteEntity
@@ -49,7 +50,7 @@ class CharacterLookupRepositoriesTest {
         favoriteDao = FakeFavoriteCharacterDao()
         local = CharacterLookupLocalDataSourceImpl(characterDao, searchDao, favoriteDao, nowMillis = { now })
         search = CharacterSearchRepositoryImpl(remote, local)
-        detail = CharacterDetailRepositoryImpl(remote, local)
+        detail = CharacterDetailRepositoryImpl(remote, local, testSingleFlight())
         favorites = FavoriteRepositoryImpl(local)
     }
 

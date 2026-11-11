@@ -4,6 +4,7 @@ import com.amr.core.data.fake.FakeCharacterLocalDataSource
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
 import com.amr.core.data.fake.testCharacter
 import com.amr.core.data.fake.testCharacterDto
+import com.amr.core.data.fake.testSingleFlight
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.data.remote.dto.PageInfoDto
@@ -16,7 +17,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -53,7 +54,8 @@ class CharacterRepositoryImplTest {
         localDataSource = FakeCharacterLocalDataSource()
         repository = CharacterRepositoryImpl(
             remoteDataSource = remoteDataSource,
-            localDataSource = localDataSource
+            localDataSource = localDataSource,
+            singleFlight = testSingleFlight()
         )
     }
 
@@ -294,10 +296,12 @@ class CharacterRepositoryImplTest {
         val gate = CompletableDeferred<Unit>()
         remoteDataSource.gate = gate
 
+        // runCurrent, not advanceUntilIdle: the gated request must stay pending, and
+        // advancing virtual time would end it at the remote-call budget (30 s).
         val refresh = launch { repository.refreshCharacters() }
-        advanceUntilIdle()
+        runCurrent()
         val loadMore = launch { repository.loadNextPage() }
-        advanceUntilIdle()
+        runCurrent()
 
         // Load-more is waiting for the lock and has not requested anything yet.
         assertEquals(listOf(1), remoteDataSource.requestedPages)
@@ -318,7 +322,8 @@ class CharacterRepositoryImplTest {
         remoteDataSource.gate = CompletableDeferred()
 
         val job = launch { repository.loadNextPage() }
-        advanceUntilIdle()
+        // Keeps the request pending without reaching the remote-call budget.
+        runCurrent()
         job.cancel()
         job.join()
 

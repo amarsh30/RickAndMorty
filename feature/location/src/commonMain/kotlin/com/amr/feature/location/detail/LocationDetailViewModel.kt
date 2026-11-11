@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.Location
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.FetchRelatedCharactersUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.ObserveLocationDetailUseCase
 import com.amr.core.domain.usecase.ObserveLocationResidentIdsUseCase
 import com.amr.core.domain.usecase.ObserveRelatedCharactersUseCase
 import com.amr.core.domain.usecase.RefreshLocationDetailUseCase
 import com.amr.feature.location.presentation.DATABASE_ERROR_MESSAGE
+import com.amr.feature.location.presentation.isConnectivityProblem
 import com.amr.feature.location.presentation.toUserMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,7 +54,8 @@ class LocationDetailViewModel(
     private val observeResidentIds: ObserveLocationResidentIdsUseCase,
     private val refreshLocationDetail: RefreshLocationDetailUseCase,
     private val observeRelatedCharacters: ObserveRelatedCharactersUseCase,
-    private val fetchRelatedCharacters: FetchRelatedCharactersUseCase
+    private val fetchRelatedCharacters: FetchRelatedCharactersUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LocationDetailUiState())
@@ -63,10 +67,26 @@ class LocationDetailViewModel(
         ids.take(size)
     }.distinctUntilChanged()
 
+    /** Operations that last failed for a connectivity reason; retried once the network returns. */
+    private var refreshPending = false
+    private var residentsPending = false
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
     init {
         observeDetail()
         observeResidents()
         refresh()
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
+    }
+
+    /** Called by the screen: recovery only runs while the detail is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    internal fun onConnectivityRestored() {
+        if (refreshPending) refresh()
+        // Retries the failed resident window only; the window does not grow.
+        if (residentsPending) loadMoreResidents()
     }
 
     private fun observeDetail() {
@@ -105,9 +125,11 @@ class LocationDetailViewModel(
         _uiState.update { it.copy(isLoadingResidents = true, residentsErrorMessage = null) }
         try {
             fetchRelatedCharacters(ids)
+            residentsPending = false
         } catch (exception: CancellationException) {
             throw exception
         } catch (exception: Exception) {
+            residentsPending = exception.isConnectivityProblem
             _uiState.update { it.copy(residentsErrorMessage = exception.toUserMessage()) }
         } finally {
             _uiState.update { it.copy(isLoadingResidents = false) }
@@ -122,9 +144,11 @@ class LocationDetailViewModel(
         viewModelScope.launch {
             try {
                 refreshLocationDetail(locationId)
+                refreshPending = false
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
+                refreshPending = exception.isConnectivityProblem
                 _uiState.update { it.copy(errorMessage = exception.toUserMessage()) }
             } finally {
                 _uiState.update { it.copy(isRefreshing = false, isLoading = false) }

@@ -11,7 +11,12 @@ import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.Episode
 import com.amr.core.domain.model.Location
 import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.model.NetworkStatus
+import com.amr.core.domain.repository.ConnectivityObserver
 import com.amr.core.domain.repository.EpisodeRepository
+import com.amr.core.data.concurrency.SingleFlight
+import com.amr.core.data.remote.retry.RemoteCalls
+import com.amr.core.domain.usecase.ObserveAppConnectivityUseCase
 import com.amr.core.domain.repository.LocationRepository
 import com.amr.feature.episode.detail.EpisodeDetailViewModel
 import com.amr.feature.episode.presentation.EpisodeListViewModel
@@ -90,6 +95,13 @@ class KoinModulesTest {
                     data.value = data.value + characters
                     this.metadata.value = metadata
                 }
+            }
+        }
+        // Provided by the platform modules (Android/iOS) in the app.
+        single<ConnectivityObserver> {
+            object : ConnectivityObserver {
+                override val networkStatus: Flow<NetworkStatus> =
+                    flowOf(NetworkStatus(isConnected = true, isInternetValidated = true))
             }
         }
         // Location/episode repositories need Room DAOs; stubbed so the graph test stays on the JVM.
@@ -174,5 +186,18 @@ class KoinModulesTest {
         }.koin
 
         assertSame(koin.get<CharacterRepository>(), koin.get<CharacterRepository>())
+    }
+
+    @Test
+    fun reliabilityInfrastructure_isSharedAndResolvable() {
+        val koin = startKoin {
+            allowOverride(true)
+            modules(commonModules + fakeOverrides)
+        }.koin
+
+        // One in-flight map and one API status for the whole app.
+        assertSame(koin.get<SingleFlight>(), koin.get<SingleFlight>())
+        assertSame(koin.get<RemoteCalls>(), koin.get<RemoteCalls>())
+        assertNotNull(koin.get<ObserveAppConnectivityUseCase>())
     }
 }

@@ -18,7 +18,8 @@ val characterModule = module {
             observeCharacterDetail = get(),
             refreshCharacterDetail = get(),
             observeIsFavorite = get(),
-            setFavorite = get()
+            setFavorite = get(),
+            connectivityRestored = get()
         )
     }
 }

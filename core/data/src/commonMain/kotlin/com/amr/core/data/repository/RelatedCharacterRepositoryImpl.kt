@@ -4,6 +4,7 @@ import com.amr.core.data.error.toDataError
 import com.amr.core.data.local.datasource.CharacterLookupLocalDataSource
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
+import com.amr.core.data.remote.retry.RemoteCalls
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.repository.RelatedCharacterRepository
@@ -22,7 +23,8 @@ import kotlinx.coroutines.sync.withLock
  */
 class RelatedCharacterRepositoryImpl(
     private val remoteDataSource: CharacterRemoteDataSource,
-    private val localDataSource: CharacterLookupLocalDataSource
+    private val localDataSource: CharacterLookupLocalDataSource,
+    private val remoteCalls: RemoteCalls = RemoteCalls()
 ) : RelatedCharacterRepository {
 
     private val lock = Mutex()
@@ -56,7 +58,7 @@ class RelatedCharacterRepositoryImpl(
 
     private suspend fun fetchBatch(batch: List<Int>) {
         val dtos = try {
-            remoteDataSource.getCharactersByIds(batch)
+            remoteCalls.get { remoteDataSource.getCharactersByIds(batch) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }

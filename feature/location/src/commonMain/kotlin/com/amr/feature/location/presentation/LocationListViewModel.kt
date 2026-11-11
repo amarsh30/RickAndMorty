@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.model.Location
 import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.LoadNextLocationsPageUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.ObserveLocationPaginationStateUseCase
 import com.amr.core.domain.usecase.ObserveLocationsUseCase
 import com.amr.core.domain.usecase.RefreshLocationsUseCase
@@ -34,7 +36,8 @@ class LocationListViewModel(
     private val observeLocations: ObserveLocationsUseCase,
     private val observePaginationState: ObserveLocationPaginationStateUseCase,
     private val refreshLocations: RefreshLocationsUseCase,
-    private val loadNextLocationsPage: LoadNextLocationsPageUseCase
+    private val loadNextLocationsPage: LoadNextLocationsPageUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LocationListUiState())
@@ -43,9 +46,27 @@ class LocationListViewModel(
     private var observeJob: Job? = null
     private var paginationJob: Job? = null
 
+    /** The operation that last failed for a connectivity reason; retried once the network returns. */
+    private var pendingRecovery: PendingOperation? = null
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
     init {
         startObserving()
         refresh()
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
+    }
+
+    /** Called by the screen: recovery only runs while the list is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    /** Retries only what last failed for a connectivity reason; guards and single-flight merge duplicates. */
+    internal fun onConnectivityRestored() {
+        when (pendingRecovery) {
+            PendingOperation.REFRESH -> refresh()
+            PendingOperation.LOAD_MORE -> loadMore()
+            null -> Unit
+        }
     }
 
     private fun startObserving() {
@@ -99,9 +120,12 @@ class LocationListViewModel(
         viewModelScope.launch {
             try {
                 refreshLocations()
+                // A fresh first page also supersedes a failed load-more.
+                pendingRecovery = null
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
+                if (exception.isConnectivityProblem) pendingRecovery = PendingOperation.REFRESH
                 _uiState.update { state ->
                     state.copy(
                         errorMessage = if (state.locations.isEmpty()) exception.toUserMessage() else STALE_DATA_MESSAGE
@@ -122,13 +146,20 @@ class LocationListViewModel(
         viewModelScope.launch {
             try {
                 loadNextLocationsPage()
+                if (pendingRecovery == PendingOperation.LOAD_MORE) pendingRecovery = null
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {
+                // A pending refresh stays first: it rebuilds the list anyway.
+                if (exception.isConnectivityProblem && pendingRecovery == null) {
+                    pendingRecovery = PendingOperation.LOAD_MORE
+                }
                 _uiState.update { it.copy(loadMoreErrorMessage = exception.toUserMessage()) }
             } finally {
                 _uiState.update { it.copy(isLoadingMore = false) }
             }
         }
     }
+
+    private enum class PendingOperation { REFRESH, LOAD_MORE }
 }

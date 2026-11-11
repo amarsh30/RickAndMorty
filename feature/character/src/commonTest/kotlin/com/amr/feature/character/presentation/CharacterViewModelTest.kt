@@ -61,7 +61,8 @@ class CharacterViewModelTest {
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
         refreshCharactersUseCase = RefreshCharactersUseCase(repository),
         observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
-        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository),
+        connectivityRestored = com.amr.feature.character.fake.connectivityRestored()
     )
 
     @Test
@@ -478,7 +479,8 @@ class CharacterViewModelTest {
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
         refreshCharactersUseCase = RefreshCharactersUseCase(repository),
         observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
-        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository),
+        connectivityRestored = com.amr.feature.character.fake.connectivityRestored()
     )
 
     @Test

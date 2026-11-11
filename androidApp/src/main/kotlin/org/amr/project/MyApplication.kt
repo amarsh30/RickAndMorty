@@ -1,6 +1,7 @@
 package org.amr.project
 
 import android.app.Application
+import com.amr.shared.di.androidConnectivityModule
 import com.amr.shared.di.androidDatabaseModule
 import com.amr.shared.di.commonModules
 import org.koin.android.ext.koin.androidContext
@@ -15,7 +16,7 @@ class MyApplication : Application() {
             androidContext(this@MyApplication)
 
             modules(
-                commonModules + androidDatabaseModule
+                commonModules + androidDatabaseModule + androidConnectivityModule
             )
         }
     }

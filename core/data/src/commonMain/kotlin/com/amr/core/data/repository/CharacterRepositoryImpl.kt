@@ -1,11 +1,13 @@
 package com.amr.core.data.repository
 
+import com.amr.core.data.concurrency.SingleFlight
 import com.amr.core.data.error.toDataError
 import com.amr.core.data.local.datasource.CharacterLocalDataSource
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
 import com.amr.core.data.remote.paging.toValidatedPageMetadata
+import com.amr.core.data.remote.retry.RemoteCalls
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.PaginationState
 import com.amr.core.domain.repository.CharacterRepository
@@ -17,7 +19,10 @@ import kotlinx.coroutines.sync.withLock
 
 class CharacterRepositoryImpl(
     private val remoteDataSource: CharacterRemoteDataSource,
-    private val localDataSource: CharacterLocalDataSource
+    private val localDataSource: CharacterLocalDataSource,
+    /** Required: production passes the app-scoped instance from Koin. */
+    private val singleFlight: SingleFlight,
+    private val remoteCalls: RemoteCalls = RemoteCalls()
 ) : CharacterRepository {
 
     /** Serializes refresh and load-more so metadata is never read while another write is pending. */
@@ -38,22 +43,26 @@ class CharacterRepositoryImpl(
             }
     }
 
-    override suspend fun refreshCharacters() {
+    /** Concurrent refreshes (manual and automatic) share one request. */
+    override suspend fun refreshCharacters() = singleFlight.run("character:refresh") {
         pagingMutex.withLock {
             replaceWithFirstPage()
         }
     }
 
-    override suspend fun loadNextPage() {
-        pagingMutex.withLock {
-            // Read inside the lock so a refresh that just finished is taken into account.
-            val metadata = localDataSource.getPagingMetadata()
-                ?: return replaceWithFirstPage()
-            val nextPage = metadata.nextPage ?: return
+    override suspend fun loadNextPage() = singleFlight.run("character:loadNextPage") {
+        pagingMutex.withLock { loadNextPageLocked() }
+    }
 
-            val page = fetchPage(nextPage)
-            localDataSource.appendPage(page.characters, page.metadata)
-        }
+    /** Must run under [pagingMutex]. */
+    private suspend fun loadNextPageLocked() {
+        // Read inside the lock so a refresh that just finished is taken into account.
+        val metadata = localDataSource.getPagingMetadata()
+            ?: return replaceWithFirstPage()
+        val nextPage = metadata.nextPage ?: return
+
+        val page = fetchPage(nextPage)
+        localDataSource.appendPage(page.characters, page.metadata)
     }
 
     /** The cache is only replaced after page 1 has been fetched and validated. */
@@ -64,7 +73,7 @@ class CharacterRepositoryImpl(
 
     private suspend fun fetchPage(page: Int): FetchedPage {
         val response = try {
-            remoteDataSource.getCharacters(page)
+            remoteCalls.get { remoteDataSource.getCharacters(page) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }

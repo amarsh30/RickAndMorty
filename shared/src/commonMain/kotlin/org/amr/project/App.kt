@@ -1,7 +1,15 @@
 
 package org.amr.project
 
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.amr.core.domain.model.AppConnectivity
+import com.amr.core.domain.usecase.ObserveAppConnectivityUseCase
+import org.koin.mp.KoinPlatform
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -97,7 +105,13 @@ fun App() {
                 ?.let { selectedTab = it }
         }
 
+        // Lifecycle-aware: collection (and the OS network callback) stops in background.
+        val observeConnectivity = remember { KoinPlatform.getKoin().get<ObserveAppConnectivityUseCase>() }
+        val connectivity by remember(observeConnectivity) { observeConnectivity() }
+            .collectAsStateWithLifecycle(initialValue = AppConnectivity.Normal)
+
         Scaffold(
+            topBar = { ConnectivityBanner(connectivity, Modifier.windowInsetsPadding(WindowInsets.statusBars)) },
             bottomBar = {
                 NavigationBar {
                     TopLevelTab.entries.forEach { tab ->

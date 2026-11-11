@@ -349,6 +349,40 @@ class CharacterRemoteDataSourceImplTest {
     }
 
     @Test
+    fun getCharacters_when503_carriesStatusCode() = runTest {
+        val dataSource = createDataSource {
+            respond(content = "", status = HttpStatusCode.ServiceUnavailable)
+        }
+
+        val error = assertFailsWith<NetworkException.ServerError> { dataSource.getCharacters(1) }
+        assertEquals(503, error.statusCode)
+    }
+
+    @Test
+    fun getCharacters_when429_readsRetryAfterSeconds() = runTest {
+        val dataSource = createDataSource {
+            respond(
+                content = "",
+                status = HttpStatusCode.TooManyRequests,
+                headers = headersOf(HttpHeaders.RetryAfter, "3")
+            )
+        }
+
+        val error = assertFailsWith<NetworkException.TooManyRequests> { dataSource.getCharacters(1) }
+        assertEquals(3_000L, error.retryAfterMillis)
+    }
+
+    @Test
+    fun getCharacters_when429WithoutRetryAfter_hasNoWait() = runTest {
+        val dataSource = createDataSource {
+            respond(content = "", status = HttpStatusCode.TooManyRequests)
+        }
+
+        val error = assertFailsWith<NetworkException.TooManyRequests> { dataSource.getCharacters(1) }
+        assertNull(error.retryAfterMillis)
+    }
+
+    @Test
     fun getCharacters_when500_throwsServerError() = runTest {
         val dataSource = createDataSource {
             respond(content = "", status = HttpStatusCode.InternalServerError)

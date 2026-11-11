@@ -69,8 +69,30 @@ class CharacterSearchViewModelTest {
 
     private fun createViewModel() = CharacterSearchViewModel(
         observeCharacterSearch = ObserveCharacterSearchUseCase(repository),
-        searchCharactersRemote = SearchCharactersRemoteUseCase(repository)
+        searchCharactersRemote = SearchCharactersRemoteUseCase(repository),
+        connectivityRestored = com.amr.feature.character.fake.connectivityRestored(connectivity)
     )
+
+    private val connectivity = com.amr.feature.character.fake.FakeConnectivityObserver()
+
+    @Test
+    fun offlineSearch_isRepeatedWhenNetworkReturns_whileVisible() = runTest(testDispatcher) {
+        repository.remoteError = DataError.NoConnection()
+        val viewModel = createViewModel()
+        viewModel.setVisible(true)
+        viewModel.onFilterChange(CharacterFilter(name = "Rick"))
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isOfflineResult)
+
+        connectivity.status.value = com.amr.feature.character.fake.OFFLINE
+        advanceUntilIdle()
+        repository.remoteError = null
+        connectivity.status.value = com.amr.feature.character.fake.ONLINE
+        advanceUntilIdle()
+
+        assertEquals(2, repository.remoteCalls.size)
+        assertFalse(viewModel.uiState.value.isOfflineResult)
+    }
 
     @Test
     fun typing_isDebounced_onlyLastQueryHitsApi() = runTest(testDispatcher) {

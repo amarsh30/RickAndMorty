@@ -4,6 +4,7 @@ import com.amr.core.data.error.toDataError
 import com.amr.core.data.local.datasource.CharacterLookupLocalDataSource
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
+import com.amr.core.data.remote.retry.RemoteCalls
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.CharacterFilter
@@ -19,7 +20,8 @@ import kotlinx.coroutines.flow.flowOf
  */
 class CharacterSearchRepositoryImpl(
     private val remoteDataSource: CharacterRemoteDataSource,
-    private val localDataSource: CharacterLookupLocalDataSource
+    private val localDataSource: CharacterLookupLocalDataSource,
+    private val remoteCalls: RemoteCalls = RemoteCalls()
 ) : CharacterSearchRepository {
 
     override fun observeSearchResults(filter: CharacterFilter): Flow<List<Character>> {
@@ -37,12 +39,14 @@ class CharacterSearchRepositoryImpl(
         if (filter.isEmpty) return
 
         val response = try {
-            remoteDataSource.searchCharacters(
-                name = filter.name.ifBlank { null },
-                status = filter.status?.apiValue,
-                species = filter.species.ifBlank { null },
-                gender = filter.gender?.apiValue
-            )
+            remoteCalls.get {
+                remoteDataSource.searchCharacters(
+                    name = filter.name.ifBlank { null },
+                    status = filter.status?.apiValue,
+                    species = filter.species.ifBlank { null },
+                    gender = filter.gender?.apiValue
+                )
+            }
         } catch (e: NetworkException) {
             // The API answers 404 when nothing matches: an empty result, not a failure.
             if (e is NetworkException.NotFound) return

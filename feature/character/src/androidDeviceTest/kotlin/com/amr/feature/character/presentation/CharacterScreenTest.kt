@@ -46,7 +46,8 @@ class CharacterScreenTest {
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
         refreshCharactersUseCase = RefreshCharactersUseCase(repository),
         observePaginationStateUseCase = ObservePaginationStateUseCase(repository),
-        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository)
+        loadNextPageCharactersUseCase = LoadNextPageCharactersUseCase(repository),
+        connectivityRestored = com.amr.feature.character.fake.connectivityRestored()
     )
 
     /** Pull-to-refresh indicator in its refreshing (spinning) state. */

@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.LoadNextPageCharactersUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.ObservePaginationStateUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
@@ -22,7 +24,8 @@ class CharacterViewModel(
     private val observeCharactersUseCase: ObserveCharactersUseCase,
     private val refreshCharactersUseCase: RefreshCharactersUseCase,
     private val observePaginationStateUseCase: ObservePaginationStateUseCase,
-    private val loadNextPageCharactersUseCase: LoadNextPageCharactersUseCase
+    private val loadNextPageCharactersUseCase: LoadNextPageCharactersUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CharacterUiState())
@@ -45,10 +48,31 @@ class CharacterViewModel(
      */
     private var lastRefreshErrorReason: String? = null
 
+    /** The operation that last failed for a connectivity reason; retried once the network returns. */
+    private var pendingRecovery: PendingOperation? = null
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
     init {
         observeCharacters()
         observePaginationState()
         refreshCharacters()
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
+    }
+
+    /** Called by the screen: recovery only runs while the list is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    /**
+     * Retries only what last failed for a connectivity reason. Concurrent manual
+     * calls are safe: the guards below and the repository's single-flight merge them.
+     */
+    internal fun onConnectivityRestored() {
+        when (pendingRecovery) {
+            PendingOperation.REFRESH -> refreshCharacters()
+            PendingOperation.LOAD_MORE -> loadMoreCharacters()
+            null -> Unit
+        }
     }
 
     private fun observePaginationState() {
@@ -132,9 +156,12 @@ class CharacterViewModel(
 
             try {
                 refreshCharactersUseCase()
+                // A fresh first page also supersedes a failed load-more.
+                pendingRecovery = null
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: DataError) {
+                if (exception.isConnectivityProblem) pendingRecovery = PendingOperation.REFRESH
                 showRefreshError(reason = exception.toMessage())
             } catch (exception: Exception) {
                 // Fallback for failures outside the data error contract (e.g. local database).
@@ -169,9 +196,14 @@ class CharacterViewModel(
 
             try {
                 loadNextPageCharactersUseCase()
+                if (pendingRecovery == PendingOperation.LOAD_MORE) pendingRecovery = null
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: DataError) {
+                // A pending refresh stays first: it rebuilds the list anyway.
+                if (exception.isConnectivityProblem && pendingRecovery == null) {
+                    pendingRecovery = PendingOperation.LOAD_MORE
+                }
                 _uiState.value = _uiState.value.copy(loadMoreErrorMessage = exception.toMessage())
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(loadMoreErrorMessage = GENERIC_ERROR_MESSAGE)
@@ -203,6 +235,8 @@ class CharacterViewModel(
     }
 
     private fun DataError.toMessage(): String = toUserMessage()
+
+    private enum class PendingOperation { REFRESH, LOAD_MORE }
 
     private companion object {
         const val STALE_DATA_MESSAGE = "Gagal memperbarui data. Menampilkan data tersimpan."

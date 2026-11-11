@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.ObserveCharacterDetailUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.ObserveIsFavoriteUseCase
 import com.amr.core.domain.usecase.RefreshCharacterDetailUseCase
 import com.amr.core.domain.usecase.SetFavoriteUseCase
 import com.amr.feature.character.presentation.GENERIC_ERROR_MESSAGE
+import com.amr.feature.character.presentation.isConnectivityProblem
 import com.amr.feature.character.presentation.toUserMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,15 +39,29 @@ class CharacterDetailViewModel(
     private val observeCharacterDetail: ObserveCharacterDetailUseCase,
     private val refreshCharacterDetail: RefreshCharacterDetailUseCase,
     private val observeIsFavorite: ObserveIsFavoriteUseCase,
-    private val setFavorite: SetFavoriteUseCase
+    private val setFavorite: SetFavoriteUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CharacterDetailUiState())
     val uiState: StateFlow<CharacterDetailUiState> = _uiState.asStateFlow()
 
+    /** The last refresh failed for a connectivity reason; retried once the network returns. */
+    private var refreshPending = false
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
     init {
         observe()
         refresh()
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
+    }
+
+    /** Called by the screen: recovery only runs while the detail is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    internal fun onConnectivityRestored() {
+        if (refreshPending) refresh()
     }
 
     private fun observe() {
@@ -78,9 +95,11 @@ class CharacterDetailViewModel(
             _uiState.value = _uiState.value.copy(isRefreshing = true, errorMessage = null)
             try {
                 refreshCharacterDetail(characterId)
+                refreshPending = false
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: DataError) {
+                refreshPending = exception.isConnectivityProblem
                 _uiState.value = _uiState.value.copy(errorMessage = exception.toUserMessage())
             } catch (exception: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = GENERIC_ERROR_MESSAGE)

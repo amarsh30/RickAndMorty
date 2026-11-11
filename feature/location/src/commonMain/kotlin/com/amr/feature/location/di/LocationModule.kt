@@ -15,7 +15,8 @@ val locationModule = module {
             observeResidentIds = get(),
             refreshLocationDetail = get(),
             observeRelatedCharacters = get(),
-            fetchRelatedCharacters = get()
+            fetchRelatedCharacters = get(),
+            connectivityRestored = get()
         )
     }
 }

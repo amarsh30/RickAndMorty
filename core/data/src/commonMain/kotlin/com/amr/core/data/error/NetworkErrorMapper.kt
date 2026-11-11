@@ -14,6 +14,8 @@ fun NetworkException.toDataError(): DataError {
         is NetworkException.Unauthorized -> DataError.Unauthorized(this)
         is NetworkException.NotFound -> DataError.NotFound(this)
         is NetworkException.ServerError -> DataError.Server(this)
+        // The server is up but refusing work for now: shown like a server problem.
+        is NetworkException.TooManyRequests -> DataError.Server(this)
         is NetworkException.Serialization -> DataError.InvalidData(this)
         is NetworkException.HttpError -> DataError.Unknown(this)
     }

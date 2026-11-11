@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amr.core.designsystem.component.AppError
 import com.amr.core.designsystem.component.AppLoading
@@ -46,6 +47,12 @@ fun CharacterDetailScreen(
     )
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Connectivity recovery only while this screen is started (visible).
+    LifecycleStartEffect(viewModel) {
+        viewModel.setVisible(true)
+        onStopOrDispose { viewModel.setVisible(false) }
+    }
 
     CharacterDetailContent(
         state = state,

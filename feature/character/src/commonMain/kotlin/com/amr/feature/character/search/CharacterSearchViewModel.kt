@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.CharacterFilter
+import com.amr.core.domain.usecase.ConnectivityRecovery
 import com.amr.core.domain.usecase.ObserveCharacterSearchUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import com.amr.core.domain.usecase.SearchCharactersRemoteUseCase
 import com.amr.feature.character.presentation.GENERIC_ERROR_MESSAGE
 import com.amr.feature.character.presentation.isConnectivityProblem
@@ -42,7 +44,8 @@ data class CharacterSearchUiState(
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class CharacterSearchViewModel(
     private val observeCharacterSearch: ObserveCharacterSearchUseCase,
-    private val searchCharactersRemote: SearchCharactersRemoteUseCase
+    private val searchCharactersRemote: SearchCharactersRemoteUseCase,
+    connectivityRestored: ObserveConnectivityRestoredUseCase
 ) : ViewModel() {
 
     private val filter = MutableStateFlow(CharacterFilter())
@@ -51,6 +54,16 @@ class CharacterSearchViewModel(
     val uiState: StateFlow<CharacterSearchUiState> = _uiState.asStateFlow()
 
     private var remoteJob: Job? = null
+
+    private val recovery = ConnectivityRecovery(connectivityRestored)
+
+    /** Called by the screen: recovery only runs while search is visible. */
+    fun setVisible(isVisible: Boolean) = recovery.setVisible(isVisible)
+
+    /** Repeats the API search only when its last attempt ended offline. */
+    internal fun onConnectivityRestored() {
+        if (_uiState.value.isOfflineResult) retry()
+    }
 
     init {
         viewModelScope.launch {
@@ -71,6 +84,7 @@ class CharacterSearchViewModel(
                     _uiState.value = _uiState.value.copy(results = results)
                 }
         }
+        recovery.launchIn(viewModelScope, ::onConnectivityRestored)
     }
 
     fun onFilterChange(newFilter: CharacterFilter) {

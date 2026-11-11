@@ -6,7 +6,10 @@ import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
+import io.ktor.http.fromHttpToGmtDate
 import io.ktor.http.isSuccess
+import io.ktor.util.date.GMTDate
 import io.ktor.serialization.ContentConvertException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -28,8 +31,11 @@ suspend inline fun <reified T> safeApiCall(
             throw when (response.status.value) {
                 401 -> NetworkException.Unauthorized()
                 404 -> NetworkException.NotFound()
+                429 -> NetworkException.TooManyRequests(
+                    retryAfterMillis = parseRetryAfterMillis(response.headers[HttpHeaders.RetryAfter])
+                )
 
-                in 500..599 -> NetworkException.ServerError()
+                in 500..599 -> NetworkException.ServerError(response.status.value)
 
                 else -> NetworkException.HttpError(
                     response.status.value
@@ -64,4 +70,29 @@ suspend inline fun <reified T> safeApiCall(
     } catch (e: IOException) {
         throw NetworkException.NoInternet()
     }
+}
+
+/**
+ * `Retry-After` as a wait in milliseconds: either delay-seconds ("120") or an
+ * HTTP-date ("Wed, 21 Oct 2015 07:28:00 GMT"). A date in the past means no wait;
+ * anything unreadable yields null.
+ */
+fun parseRetryAfterMillis(
+    value: String?,
+    nowMillis: Long = GMTDate().timestamp
+): Long? {
+    val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+
+    trimmed.toLongOrNull()?.let { seconds ->
+        return if (seconds >= 0) seconds * 1_000 else null
+    }
+
+    val date = try {
+        trimmed.fromHttpToGmtDate()
+    } catch (e: IllegalStateException) {
+        return null
+    } catch (e: IllegalArgumentException) {
+        return null
+    }
+    return (date.timestamp - nowMillis).coerceAtLeast(0)
 }

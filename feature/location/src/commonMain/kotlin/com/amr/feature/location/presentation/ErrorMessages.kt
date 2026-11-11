@@ -18,3 +18,7 @@ internal fun DataError.toUserMessage(): String = when (this) {
 
 internal fun Throwable.toUserMessage(): String =
     (this as? DataError)?.toUserMessage() ?: GENERIC_ERROR_MESSAGE
+
+/** Failures that connectivity recovery retries; same definition as in :feature:character. */
+internal val Throwable.isConnectivityProblem: Boolean
+    get() = this is DataError.NoConnection || this is DataError.Timeout

@@ -27,6 +27,8 @@ import com.amr.core.domain.usecase.RefreshEpisodeDetailUseCase
 import com.amr.core.domain.usecase.RefreshEpisodesUseCase
 import com.amr.core.domain.usecase.RefreshLocationDetailUseCase
 import com.amr.core.domain.usecase.RefreshLocationsUseCase
+import com.amr.core.domain.usecase.ObserveAppConnectivityUseCase
+import com.amr.core.domain.usecase.ObserveConnectivityRestoredUseCase
 import org.koin.core.module.dsl.factoryOf
 import org.koin.dsl.module
 
@@ -85,4 +87,8 @@ val domainModule = module {
     // Characters referenced by locations and episodes
     factoryOf(::ObserveRelatedCharactersUseCase)
     factoryOf(::FetchRelatedCharactersUseCase)
+
+    // Connectivity
+    factory { ObserveAppConnectivityUseCase(connectivityObserver = get(), apiStatusRepository = get()) }
+    factory { ObserveConnectivityRestoredUseCase(connectivityObserver = get()) }
 }

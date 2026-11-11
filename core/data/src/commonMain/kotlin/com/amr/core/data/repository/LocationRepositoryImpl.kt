@@ -1,5 +1,6 @@
 package com.amr.core.data.repository
 
+import com.amr.core.data.concurrency.SingleFlight
 import com.amr.core.data.error.toDataError
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.mapper.toEntity
@@ -9,6 +10,7 @@ import com.amr.core.data.remote.dto.LocationDto
 import com.amr.core.data.remote.paging.PageMetadata
 import com.amr.core.data.remote.paging.paginationStateOf
 import com.amr.core.data.remote.paging.toValidatedPageMetadata
+import com.amr.core.data.remote.retry.RemoteCalls
 import com.amr.core.database.dao.LocationDao
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Location
@@ -22,7 +24,10 @@ import kotlinx.coroutines.sync.withLock
 
 class LocationRepositoryImpl(
     private val remoteDataSource: LocationRemoteDataSource,
-    private val locationDao: LocationDao
+    private val locationDao: LocationDao,
+    /** Required: production passes the app-scoped instance from Koin. */
+    private val singleFlight: SingleFlight,
+    private val remoteCalls: RemoteCalls = RemoteCalls()
 ) : LocationRepository {
 
     /** Serializes refresh and load-more so metadata is never read while another write is pending. */
@@ -34,24 +39,28 @@ class LocationRepositoryImpl(
     override fun observePaginationState(): Flow<PaginationState> =
         locationDao.observePagingState().map { paginationStateOf(it != null, it?.nextPage) }
 
-    override suspend fun refreshLocations() {
+    /** Concurrent refreshes (manual and automatic) share one request. */
+    override suspend fun refreshLocations() = singleFlight.run("location:refresh") {
         pagingMutex.withLock { replaceWithFirstPage() }
     }
 
-    override suspend fun loadNextPage() {
-        pagingMutex.withLock {
-            // Read inside the lock so a refresh that just finished is taken into account.
-            val state = locationDao.getPagingState() ?: return replaceWithFirstPage()
-            val nextPage = state.nextPage ?: return
+    override suspend fun loadNextPage() = singleFlight.run("location:loadNextPage") {
+        pagingMutex.withLock { loadNextPageLocked() }
+    }
 
-            val (locations, metadata) = fetchPage(nextPage)
-            locationDao.appendPage(
-                locations = locations.map { it.toEntity() },
-                residents = locations.flatMap { it.toResidentEntities() },
-                nextPage = metadata.nextPage,
-                totalPages = metadata.totalPages
-            )
-        }
+    /** Must run under [pagingMutex]. */
+    private suspend fun loadNextPageLocked() {
+        // Read inside the lock so a refresh that just finished is taken into account.
+        val state = locationDao.getPagingState() ?: return replaceWithFirstPage()
+        val nextPage = state.nextPage ?: return
+
+        val (locations, metadata) = fetchPage(nextPage)
+        locationDao.appendPage(
+            locations = locations.map { it.toEntity() },
+            residents = locations.flatMap { it.toResidentEntities() },
+            nextPage = metadata.nextPage,
+            totalPages = metadata.totalPages
+        )
     }
 
     override fun observeLocation(id: Int): Flow<Location?> =
@@ -60,9 +69,9 @@ class LocationRepositoryImpl(
     override fun observeResidentIds(id: Int): Flow<List<Int>> =
         locationDao.observeResidentIds(id)
 
-    override suspend fun refreshLocation(id: Int) {
+    override suspend fun refreshLocation(id: Int) = singleFlight.run("location:detail:$id") {
         val dto = try {
-            remoteDataSource.getLocation(id)
+            remoteCalls.get { remoteDataSource.getLocation(id) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }
@@ -85,7 +94,7 @@ class LocationRepositoryImpl(
 
     private suspend fun fetchPage(page: Int): Pair<List<LocationDto>, PageMetadata> {
         val response = try {
-            remoteDataSource.getLocations(page)
+            remoteCalls.get { remoteDataSource.getLocations(page) }
         } catch (e: NetworkException) {
             throw e.toDataError()
         }

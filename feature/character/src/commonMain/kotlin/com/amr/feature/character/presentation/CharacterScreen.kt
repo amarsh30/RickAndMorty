@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import com.amr.core.designsystem.component.AppLoading
@@ -29,6 +30,12 @@ fun CharacterScreen(
     viewModel: CharacterViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Connectivity recovery only while this screen is started (visible).
+    LifecycleStartEffect(viewModel) {
+        viewModel.setVisible(true)
+        onStopOrDispose { viewModel.setVisible(false) }
+    }
 
     CharacterContent(
         state = uiState,
