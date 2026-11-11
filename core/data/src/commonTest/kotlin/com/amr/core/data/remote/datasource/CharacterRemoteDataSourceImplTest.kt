@@ -4,6 +4,7 @@ import com.amr.core.network.ApiConfig
 import com.amr.core.network.exception.NetworkException
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.MockRequestHandleScope
 import io.ktor.client.engine.mock.MockRequestHandler
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.network.sockets.ConnectTimeoutException
@@ -11,6 +12,7 @@ import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.HttpResponseData
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -28,6 +30,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -61,30 +64,150 @@ class CharacterRemoteDataSourceImplTest {
         return CharacterRemoteDataSourceImpl(client)
     }
 
+    private val rickJson = """
+        {
+          "id": 1,
+          "name": "Rick Sanchez",
+          "status": "Alive",
+          "species": "Human",
+          "gender": "Male",
+          "image": "https://rickandmortyapi.com/api/character/avatar/1.jpeg"
+        }
+    """.trimIndent()
+
+    /** Builds a list response shaped like the real API, with [infoJson] as the `info` object. */
+    private fun pageJson(infoJson: String): String = """
+        {
+          "info": $infoJson,
+          "results": [ $rickJson ]
+        }
+    """.trimIndent()
+
+    private val firstPageInfo = """
+        {
+          "count": 826,
+          "pages": 42,
+          "next": "https://rickandmortyapi.com/api/character?page=2",
+          "prev": null
+        }
+    """.trimIndent()
+
+    private fun MockRequestHandleScope.respondPageJson(
+        infoJson: String = firstPageInfo
+    ): HttpResponseData = respond(
+        content = pageJson(infoJson),
+        status = HttpStatusCode.OK,
+        headers = jsonHeaders
+    )
+
+    private fun respondPage(infoJson: String = firstPageInfo): MockRequestHandler = {
+        respondPageJson(infoJson)
+    }
+
+    @Test
+    fun getCharacters_withoutPage_requestsFirstPage() = runTest {
+        var requestedPage: String? = null
+        val dataSource = createDataSource { request ->
+            assertEquals("/api/character", request.url.encodedPath)
+            requestedPage = request.url.parameters["page"]
+            respondPageJson()
+        }
+
+        dataSource.getCharacters()
+
+        assertEquals("1", requestedPage)
+    }
+
+    @Test
+    fun getCharacters_withPage2_sendsPageQueryParameter() = runTest {
+        var requestedPage: String? = null
+        var requestUrl: String? = null
+        val dataSource = createDataSource { request ->
+            requestedPage = request.url.parameters["page"]
+            requestUrl = request.url.toString()
+            respondPageJson()
+        }
+
+        dataSource.getCharacters(page = 2)
+
+        assertEquals("2", requestedPage)
+        assertEquals("https://rickandmortyapi.com/api/character?page=2", requestUrl)
+    }
+
+    @Test
+    fun getCharacters_firstPage_parsesInfoWithNextAndNullPrev() = runTest {
+        val dataSource = createDataSource(respondPage(firstPageInfo))
+
+        val info = dataSource.getCharacters().info
+
+        assertEquals(826, info.count)
+        assertEquals(42, info.pages)
+        assertEquals("https://rickandmortyapi.com/api/character?page=2", info.next)
+        assertNull(info.prev)
+    }
+
+    @Test
+    fun getCharacters_lastPage_parsesNullNext() = runTest {
+        val lastPageInfo = """
+            {
+              "count": 826,
+              "pages": 42,
+              "next": null,
+              "prev": "https://rickandmortyapi.com/api/character?page=41"
+            }
+        """.trimIndent()
+        val dataSource = createDataSource(respondPage(lastPageInfo))
+
+        val info = dataSource.getCharacters(page = 42).info
+
+        assertNull(info.next)
+        assertEquals("https://rickandmortyapi.com/api/character?page=41", info.prev)
+    }
+
+    @Test
+    fun getCharacters_whenInfoMissing_throwsSerialization() = runTest {
+        val dataSource = createDataSource {
+            respond(
+                content = """{ "results": [ $rickJson ] }""",
+                status = HttpStatusCode.OK,
+                headers = jsonHeaders
+            )
+        }
+
+        assertFailsWith<NetworkException.Serialization> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenRequiredInfoFieldMissing_throwsSerialization() = runTest {
+        // "pages" is missing.
+        val dataSource = createDataSource(
+            respondPage("""{ "count": 826, "next": null, "prev": null }""")
+        )
+
+        assertFailsWith<NetworkException.Serialization> {
+            dataSource.getCharacters()
+        }
+    }
+
+    @Test
+    fun getCharacters_whenInfoFieldHasInvalidType_throwsSerialization() = runTest {
+        val dataSource = createDataSource(
+            respondPage("""{ "count": 826, "pages": "many", "next": null, "prev": null }""")
+        )
+
+        assertFailsWith<NetworkException.Serialization> {
+            dataSource.getCharacters()
+        }
+    }
+
     @Test
     fun getCharacters_when200WithValidJson_returnsParsedDto() = runTest {
         val dataSource = createDataSource { request ->
             assertEquals("/api/character", request.url.encodedPath)
 
-            respond(
-                content = """
-                    {
-                      "info": { "count": 1 },
-                      "results": [
-                        {
-                          "id": 1,
-                          "name": "Rick Sanchez",
-                          "status": "Alive",
-                          "species": "Human",
-                          "gender": "Male",
-                          "image": "https://rickandmortyapi.com/api/character/avatar/1.jpeg"
-                        }
-                      ]
-                    }
-                """.trimIndent(),
-                status = HttpStatusCode.OK,
-                headers = jsonHeaders
-            )
+            respondPageJson()
         }
 
         val response = dataSource.getCharacters()
@@ -127,9 +250,9 @@ class CharacterRemoteDataSourceImplTest {
     @Test
     fun getCharacters_when200WithInvalidJson_throwsSerialization() = runTest {
         val dataSource = createDataSource {
-            // Required fields (name, status, species, image) are missing.
+            // Required character fields (name, status, species, image) are missing.
             respond(
-                content = """{ "results": [ { "id": 1 } ] }""",
+                content = """{ "info": $firstPageInfo, "results": [ { "id": 1 } ] }""",
                 status = HttpStatusCode.OK,
                 headers = jsonHeaders
             )

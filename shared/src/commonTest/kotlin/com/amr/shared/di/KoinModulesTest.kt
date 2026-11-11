@@ -3,6 +3,7 @@ package com.amr.shared.di
 import com.amr.core.data.local.datasource.CharacterLocalDataSource
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
 import com.amr.core.data.remote.dto.CharacterResponseDto
+import com.amr.core.data.remote.dto.PageInfoDto
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.repository.CharacterRepository
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
@@ -36,7 +37,10 @@ class KoinModulesTest {
     private val fakeOverrides: Module = module {
         single<CharacterRemoteDataSource> {
             object : CharacterRemoteDataSource {
-                override suspend fun getCharacters() = CharacterResponseDto(results = emptyList())
+                override suspend fun getCharacters(page: Int) = CharacterResponseDto(
+                    info = PageInfoDto(count = 0, pages = 0, next = null, prev = null),
+                    results = emptyList()
+                )
             }
         }
         single<CharacterLocalDataSource> {

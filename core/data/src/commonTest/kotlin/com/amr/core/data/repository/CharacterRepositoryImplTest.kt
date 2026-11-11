@@ -4,6 +4,7 @@ import com.amr.core.data.fake.FakeCharacterLocalDataSource
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
 import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
+import com.amr.core.data.remote.dto.PageInfoDto
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
 import com.amr.core.network.exception.NetworkException
@@ -67,6 +68,7 @@ class CharacterRepositoryImplTest {
     fun refreshCharacters_whenApiSucceeds_replacesOldCache() = runTest {
         localDataSource.saveCharacters(cachedCharacters)
         remoteDataSource.response = CharacterResponseDto(
+            info = PageInfoDto(count = 1, pages = 1, next = null, prev = null),
             results = listOf(
                 CharacterDto(3, "Summer Smith", "Alive", "Human", "summer.png")
             )
