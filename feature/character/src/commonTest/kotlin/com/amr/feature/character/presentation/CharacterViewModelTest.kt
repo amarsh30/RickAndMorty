@@ -2,6 +2,7 @@ package com.amr.feature.character.presentation
 
 import com.amr.core.domain.error.DataError
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.repository.CharacterRepository
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import com.amr.feature.character.fake.FakeCharacterRepository
@@ -9,6 +10,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -272,6 +278,188 @@ class CharacterViewModelTest {
         assertNull(state.errorMessage)
     }
 
+    // --- Room observation errors (E4-B) ---
+
+    private fun createViewModel(repository: ControllableRepository) = CharacterViewModel(
+        observeCharactersUseCase = ObserveCharactersUseCase(repository),
+        refreshCharactersUseCase = RefreshCharactersUseCase(repository)
+    )
+
+    @Test
+    fun observeFailsBeforeFirstEmission_stopsLoadingAndShowsDatabaseError() = runTest(testDispatcher) {
+        val repository = ControllableRepository().apply {
+            observations.add(flow { throw IllegalStateException("DB open failed") })
+        }
+
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertTrue(state.characters.isEmpty())
+        assertEquals(DATABASE_ERROR, state.errorMessage)
+    }
+
+    @Test
+    fun observeFailsAfterCache_keepsCharactersAndShowsDatabaseError() = runTest(testDispatcher) {
+        val repository = ControllableRepository().apply {
+            observations.add(flow {
+                emit(listOf(rick))
+                throw IllegalStateException("Mapper failed")
+            })
+        }
+
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick), state.characters)
+        assertEquals(DATABASE_ERROR, state.errorMessage)
+    }
+
+    @Test
+    fun retryAfterObserveFailure_restartsCollectorAndRecovers() = runTest(testDispatcher) {
+        val room = MutableSharedFlow<List<Character>>()
+        val repository = ControllableRepository().apply {
+            observations.add(flow { throw IllegalStateException("DB open failed") })
+            observations.add(room)
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.subscriptionCount)
+        assertEquals(1, repository.activeCollectors)
+        // Refresh sukses, tetapi Room belum pulih: error database tetap tampil.
+        assertEquals(2, repository.refreshCount)
+        assertEquals(DATABASE_ERROR, viewModel.uiState.value.errorMessage)
+
+        room.emit(listOf(rick, morty))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty), state.characters)
+        assertNull(state.errorMessage)
+    }
+
+    @Test
+    fun refreshFailsWhileObserveFailed_keepsDatabaseError() = runTest(testDispatcher) {
+        val repository = ControllableRepository().apply {
+            observations.add(flow {
+                emit(listOf(rick))
+                throw IllegalStateException("Mapper failed")
+            })
+            observations.add(MutableSharedFlow())
+            refreshError = DataError.NoConnection()
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick), state.characters)
+        assertEquals(DATABASE_ERROR, state.errorMessage)
+    }
+
+    @Test
+    fun roomRecoversThenRefreshFails_showsCacheWithRefreshWarning() = runTest(testDispatcher) {
+        val room = MutableSharedFlow<List<Character>>()
+        val refreshGate = CompletableDeferred<Unit>()
+        val repository = ControllableRepository().apply {
+            observations.add(flow { throw IllegalStateException("DB open failed") })
+            observations.add(room)
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+        assertEquals(DATABASE_ERROR, viewModel.uiState.value.errorMessage)
+
+        // Retry: observasi dimulai ulang, refresh API ditahan di gate.
+        repository.refreshGate = refreshGate
+        repository.refreshError = DataError.NoConnection()
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.isRefreshing)
+
+        // Room pulih lebih dulu dan mengirim cache.
+        room.emit(listOf(rick))
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.errorMessage)
+
+        // Baru kemudian refresh API gagal karena tidak ada koneksi.
+        refreshGate.complete(Unit)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick), state.characters)
+        assertFalse(state.isLoading)
+        assertFalse(state.isRefreshing)
+        assertEquals("Gagal memperbarui data. Menampilkan data tersimpan.", state.errorMessage)
+    }
+
+    @Test
+    fun refreshFailsBeforeRoomRecovers_showsCacheWithRefreshWarning() = runTest(testDispatcher) {
+        val room = MutableSharedFlow<List<Character>>()
+        val repository = ControllableRepository().apply {
+            observations.add(flow { throw IllegalStateException("DB open failed") })
+            observations.add(room)
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+        assertEquals(DATABASE_ERROR, viewModel.uiState.value.errorMessage)
+
+        // Retry: observasi dimulai ulang, tetapi refresh gagal sebelum Room emit.
+        repository.refreshError = DataError.NoConnection()
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+        assertEquals(DATABASE_ERROR, viewModel.uiState.value.errorMessage)
+
+        // Room baru pulih setelah refresh gagal.
+        room.emit(listOf(rick))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick), state.characters)
+        assertFalse(state.isLoading)
+        assertFalse(state.isRefreshing)
+        assertEquals("Gagal memperbarui data. Menampilkan data tersimpan.", state.errorMessage)
+    }
+
+    @Test
+    fun observeThrowsCancellation_isNotTurnedIntoError() = runTest(testDispatcher) {
+        val repository = ControllableRepository().apply {
+            observations.add(flow { throw CancellationException("cancelled") })
+        }
+
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertNull(state.errorMessage)
+        assertTrue(state.isLoading)
+    }
+
+    @Test
+    fun repeatedRefresh_doesNotCreateDuplicateCollectors() = runTest(testDispatcher) {
+        val repository = ControllableRepository().apply {
+            observations.add(MutableSharedFlow())
+        }
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        repeat(3) {
+            viewModel.refreshCharacters()
+            advanceUntilIdle()
+        }
+
+        assertEquals(1, repository.subscriptionCount)
+        assertEquals(1, repository.activeCollectors)
+        assertEquals(4, repository.refreshCount)
+    }
+
     @Test
     fun init_whenRefreshCancelled_showsNoErrorAndResetsRefreshing() = runTest(testDispatcher) {
         repository.errorToThrow = CancellationException("cancelled")
@@ -283,5 +471,47 @@ class CharacterViewModelTest {
         assertNull(state.errorMessage)
         assertFalse(state.isRefreshing)
         assertEquals(1, repository.refreshCount)
+    }
+
+    private companion object {
+        const val DATABASE_ERROR = "Gagal membaca data tersimpan. Coba lagi."
+    }
+
+    /**
+     * Repository dengan Flow observasi yang dikontrol per subscription, untuk
+     * mensimulasikan kegagalan Room/mapper dan menghitung collector aktif.
+     * Refresh tidak menulis data: data hanya datang dari Flow observasi.
+     */
+    private class ControllableRepository : CharacterRepository {
+
+        /** Flow untuk tiap subscription berikutnya; jika habis, Flow tidak pernah emit. */
+        val observations = ArrayDeque<Flow<List<Character>>>()
+        var refreshError: Exception? = null
+
+        /** Jika diisi, refresh menunggu gate sebelum berhasil/gagal. */
+        var refreshGate: CompletableDeferred<Unit>? = null
+
+        var subscriptionCount = 0
+            private set
+        var activeCollectors = 0
+            private set
+        var refreshCount = 0
+            private set
+
+        override fun observeCharacters(): Flow<List<Character>> {
+            val source = observations.removeFirstOrNull() ?: MutableSharedFlow()
+            return source
+                .onStart {
+                    subscriptionCount++
+                    activeCollectors++
+                }
+                .onCompletion { activeCollectors-- }
+        }
+
+        override suspend fun refreshCharacters() {
+            refreshCount++
+            refreshGate?.await()
+            refreshError?.let { throw it }
+        }
     }
 }
