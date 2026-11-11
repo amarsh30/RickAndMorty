@@ -5,10 +5,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
@@ -29,6 +33,9 @@ fun CharacterScreen(
     )
 }
 
+internal const val CHARACTER_REFRESH_INDICATOR_TAG = "character_refresh_indicator"
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CharacterContent(
     state: CharacterUiState,
@@ -80,26 +87,40 @@ private fun CharacterContent(
                     )
                 }
 
-                if (state.isRefreshing) {
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                // The pull-to-refresh indicator is the only refresh indicator for the list;
+                // its visibility is driven by the ViewModel's isRefreshing.
+                val pullToRefreshState = rememberPullToRefreshState()
 
-                LazyColumn(
+                PullToRefreshBox(
+                    isRefreshing = state.isRefreshing,
+                    onRefresh = onRetry,
+                    state = pullToRefreshState,
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(
-                        items = state.characters,
-                        key = { it.id }
-                    ) { character ->
-                        CharacterCard(
-                            name = character.name,
-                            status = character.status,
-                            imageUrl = character.imageUrl
+                    indicator = {
+                        PullToRefreshDefaults.Indicator(
+                            state = pullToRefreshState,
+                            isRefreshing = state.isRefreshing,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .testTag(CHARACTER_REFRESH_INDICATOR_TAG)
                         )
+                    }
+                ) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(
+                            items = state.characters,
+                            key = { it.id }
+                        ) { character ->
+                            CharacterCard(
+                                name = character.name,
+                                status = character.status,
+                                imageUrl = character.imageUrl
+                            )
+                        }
                     }
                 }
             }

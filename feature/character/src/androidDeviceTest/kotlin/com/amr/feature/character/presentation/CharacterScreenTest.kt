@@ -2,8 +2,15 @@ package com.amr.feature.character.presentation
 
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
@@ -14,6 +21,7 @@ import com.amr.core.domain.usecase.RefreshCharactersUseCase
 import com.amr.feature.character.fake.FakeCharacterRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * UI test untuk [CharacterScreen] — layar benar-benar digambar di emulator.
@@ -33,6 +41,14 @@ class CharacterScreenTest {
         observeCharactersUseCase = ObserveCharactersUseCase(repository),
         refreshCharactersUseCase = RefreshCharactersUseCase(repository)
     )
+
+    /** Pull-to-refresh indicator in its refreshing (spinning) state. */
+    private val refreshingIndicator: SemanticsMatcher =
+        hasTestTag(CHARACTER_REFRESH_INDICATOR_TAG) and
+            hasAnyDescendant(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
+
+    private val anyIndeterminateProgress: SemanticsMatcher =
+        hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)
 
     @Test
     fun whenRefreshSucceeds_showsCharacterList() = runComposeUiTest {
@@ -76,12 +92,58 @@ class CharacterScreenTest {
 
         setContent { CharacterScreen(viewModel = createViewModel(repository)) }
 
+        // Cache tetap tampil, dan hanya indikator pull-to-refresh yang berputar.
         onNodeWithText("Rick Sanchez").assertIsDisplayed()
-        onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
+        onNode(refreshingIndicator).assertExists()
+        onAllNodes(anyIndeterminateProgress).assertCountEquals(1)
 
         gate.complete(Unit)
 
+        // Data baru datang lewat Room Flow, indikator berhenti.
         onNodeWithText("Morty Smith").assertIsDisplayed()
+        onNode(refreshingIndicator).assertDoesNotExist()
+        onAllNodes(anyIndeterminateProgress).assertCountEquals(0)
+    }
+
+    @Test
+    fun whenPullToRefreshFails_keepsCacheAndShowsWarning() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            characters.value = listOf(rick)
+            this.gate = gate
+            errorToThrow = DataError.NoConnection()
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+        onNode(refreshingIndicator).assertExists()
+
+        gate.complete(Unit)
+
+        onNodeWithText("Gagal memperbarui data. Menampilkan data tersimpan.").assertIsDisplayed()
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+        onNode(refreshingIndicator).assertDoesNotExist()
+    }
+
+    @Test
+    fun swipeDownOnList_triggersRefresh() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply {
+            characters.value = listOf(rick)
+            refreshResult = listOf(rick)
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+        waitForIdle()
+        assertEquals(1, repository.refreshCount)
+        onNodeWithText("Morty Smith").assertDoesNotExist()
+
+        repository.refreshResult = listOf(rick, morty)
+
+        onNode(hasScrollAction()).performTouchInput { swipeDown() }
+
+        onNodeWithText("Morty Smith").assertIsDisplayed()
+        assertEquals(2, repository.refreshCount)
     }
 
     @Test
