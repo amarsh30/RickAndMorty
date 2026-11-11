@@ -31,13 +31,20 @@ class CharacterViewModel(
         viewModelScope.launch {
             observeCharactersUseCase()
                 .collect { characters ->
-                    _uiState.value = _uiState.value.copy(
+                    val currentState = _uiState.value
+
+                    // errorMessage only comes from a failed refresh and is cleared when the
+                    // next refresh starts, so a Room emission must never drop it. If the cache
+                    // arrives after the failure, switch to the stale-data warning.
+                    _uiState.value = currentState.copy(
                         isLoading = false,
                         characters = characters,
-                        errorMessage = if (characters.isNotEmpty()) {
-                            null
+                        errorMessage = if (
+                            currentState.errorMessage != null && characters.isNotEmpty()
+                        ) {
+                            STALE_DATA_MESSAGE
                         } else {
-                            _uiState.value.errorMessage
+                            currentState.errorMessage
                         }
                     )
                 }
@@ -81,7 +88,7 @@ class CharacterViewModel(
             errorMessage = if (currentState.characters.isEmpty()) {
                 reason
             } else {
-                "Gagal memperbarui data. Menampilkan data tersimpan."
+                STALE_DATA_MESSAGE
             }
         )
     }
@@ -100,5 +107,6 @@ class CharacterViewModel(
 
     private companion object {
         const val GENERIC_ERROR_MESSAGE = "Terjadi kesalahan. Coba lagi."
+        const val STALE_DATA_MESSAGE = "Gagal memperbarui data. Menampilkan data tersimpan."
     }
 }

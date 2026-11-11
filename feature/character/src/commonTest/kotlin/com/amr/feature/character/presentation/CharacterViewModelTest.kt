@@ -218,6 +218,61 @@ class CharacterViewModelTest {
     }
 
     @Test
+    fun init_whenRefreshFailsBeforeCacheEmits_keepsCacheWarning() = runTest(testDispatcher) {
+        repository.errorToThrow = DataError.NoConnection()
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        // Refresh sudah gagal, Room belum mengirim cache apa pun.
+        assertEquals(
+            "Gagal memuat karakter. Periksa koneksi internet.",
+            viewModel.uiState.value.errorMessage
+        )
+
+        // Room baru mengirim cache setelah kegagalan.
+        repository.characters.value = listOf(rick)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick), state.characters)
+        assertFalse(state.isLoading)
+        assertEquals("Gagal memperbarui data. Menampilkan data tersimpan.", state.errorMessage)
+    }
+
+    @Test
+    fun roomReEmitAfterRefreshFailure_keepsCacheWarning() = runTest(testDispatcher) {
+        repository.characters.value = listOf(rick)
+        repository.errorToThrow = DataError.NoConnection()
+
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        repository.characters.value = listOf(rick, morty)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty), state.characters)
+        assertEquals("Gagal memperbarui data. Menampilkan data tersimpan.", state.errorMessage)
+    }
+
+    @Test
+    fun refreshSucceedsAfterCacheWarning_clearsWarning() = runTest(testDispatcher) {
+        repository.characters.value = listOf(rick)
+        repository.errorToThrow = DataError.NoConnection()
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        repository.errorToThrow = null
+        repository.refreshResult = listOf(rick, morty)
+        viewModel.refreshCharacters()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(rick, morty), state.characters)
+        assertNull(state.errorMessage)
+    }
+
+    @Test
     fun init_whenRefreshCancelled_showsNoErrorAndResetsRefreshing() = runTest(testDispatcher) {
         repository.errorToThrow = CancellationException("cancelled")
 
