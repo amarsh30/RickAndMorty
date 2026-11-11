@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidx.room)
-
+    id("amr.kmp.test")
 }
 
 kotlin {
