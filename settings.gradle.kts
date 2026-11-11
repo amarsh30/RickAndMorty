@@ -42,3 +42,5 @@ include(":core:database")
 include(":core:designsystem")
 
 include(":feature:character")
+include(":feature:location")
+include(":feature:episode")

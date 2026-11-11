@@ -20,6 +20,12 @@ interface CharacterLookupLocalDataSource {
     /** List cache first, then search cache, then the favorite snapshot. */
     fun observeCharacter(id: Int): Flow<Character?>
 
+    /** The cached characters among [ids], one per id, in unspecified order. */
+    fun observeCharacters(ids: List<Int>): Flow<List<Character>>
+
+    /** Which of [ids] are cached in any character table. */
+    suspend fun getCachedIds(ids: List<Int>): Set<Int>
+
     /**
      * Stores characters fetched outside list pagination: rows already in the list
      * cache are updated in place, others go to the search cache. Favorite snapshots

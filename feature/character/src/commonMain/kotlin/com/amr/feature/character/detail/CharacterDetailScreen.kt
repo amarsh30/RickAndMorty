@@ -39,6 +39,7 @@ import org.koin.core.parameter.parametersOf
 fun CharacterDetailScreen(
     characterId: Int,
     onBack: () -> Unit,
+    onLocationClick: (Int) -> Unit = {},
     viewModel: CharacterDetailViewModel = koinViewModel(
         key = "character-detail-$characterId",
         parameters = { parametersOf(characterId) }
@@ -50,7 +51,8 @@ fun CharacterDetailScreen(
         state = state,
         onBack = onBack,
         onRetry = viewModel::refresh,
-        onToggleFavorite = viewModel::toggleFavorite
+        onToggleFavorite = viewModel::toggleFavorite,
+        onLocationClick = onLocationClick
     )
 }
 
@@ -60,7 +62,8 @@ internal fun CharacterDetailContent(
     state: CharacterDetailUiState,
     onBack: () -> Unit,
     onRetry: () -> Unit,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onLocationClick: (Int) -> Unit = {}
 ) {
     Scaffold(
         topBar = {
@@ -99,7 +102,8 @@ internal fun CharacterDetailContent(
                 CharacterDetailBody(
                     character = character,
                     isFavorite = state.isFavorite,
-                    onToggleFavorite = onToggleFavorite
+                    onToggleFavorite = onToggleFavorite,
+                    onLocationClick = onLocationClick
                 )
             }
         }
@@ -110,7 +114,8 @@ internal fun CharacterDetailContent(
 private fun CharacterDetailBody(
     character: Character,
     isFavorite: Boolean,
-    onToggleFavorite: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onLocationClick: (Int) -> Unit
 ) {
     // Caps the width so the layout stays readable on tablets.
     Column(
@@ -140,8 +145,8 @@ private fun CharacterDetailBody(
         DetailRow("Spesies", character.species)
         DetailRow("Tipe", character.type?.ifBlank { "-" })
         DetailRow("Gender", character.gender)
-        DetailRow("Asal", character.originName)
-        DetailRow("Lokasi terakhir", character.locationName)
+        LocationRow("Asal", character.originName, character.originId, onLocationClick)
+        LocationRow("Lokasi terakhir", character.locationName, character.locationId, onLocationClick)
         DetailRow("Jumlah episode", character.episodeIds?.size?.toString())
 
         if (!character.hasDetails) {
@@ -150,6 +155,25 @@ private fun CharacterDetailBody(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+/** A location value that opens Location Detail when its id is known. */
+@Composable
+private fun LocationRow(label: String, name: String?, locationId: Int?, onLocationClick: (Int) -> Unit) {
+    if (locationId == null) {
+        DetailRow(label, name)
+        return
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        TextButton(onClick = { onLocationClick(locationId) }) {
+            Text(text = name ?: "-")
         }
     }
 }

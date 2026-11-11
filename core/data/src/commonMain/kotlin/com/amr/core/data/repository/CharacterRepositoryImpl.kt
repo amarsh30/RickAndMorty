@@ -5,8 +5,7 @@ import com.amr.core.data.local.datasource.CharacterLocalDataSource
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
-import com.amr.core.data.remote.dto.CharacterResponseDto
-import com.amr.core.domain.error.DataError
+import com.amr.core.data.remote.paging.toValidatedPageMetadata
 import com.amr.core.domain.model.Character
 import com.amr.core.domain.model.PaginationState
 import com.amr.core.domain.repository.CharacterRepository
@@ -70,30 +69,13 @@ class CharacterRepositoryImpl(
             throw e.toDataError()
         }
 
+        val metadata = response.info.toValidatedPageMetadata(requestedPage = page)
         return FetchedPage(
             characters = response.results.map { it.toDomain() },
-            metadata = response.toPagingMetadata(requestedPage = page)
-        )
-    }
-
-    /**
-     * Derives the stored metadata from `info`, rejecting responses whose
-     * pagination fields contradict each other or the requested page.
-     */
-    private fun CharacterResponseDto.toPagingMetadata(requestedPage: Int): CharacterPagingMetadata {
-        val hasNext = info.next != null
-        val isValid = requestedPage >= 1 &&
-            info.count >= 0 &&
-            info.pages >= 1 &&
-            requestedPage <= info.pages &&
-            // A next page exists exactly when this is not the last page.
-            hasNext == (requestedPage < info.pages)
-
-        if (!isValid) throw DataError.InvalidData()
-
-        return CharacterPagingMetadata(
-            nextPage = if (hasNext) requestedPage + 1 else null,
-            totalPages = info.pages
+            metadata = CharacterPagingMetadata(
+                nextPage = metadata.nextPage,
+                totalPages = metadata.totalPages
+            )
         )
     }
 

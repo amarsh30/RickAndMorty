@@ -4,9 +4,19 @@ import com.amr.core.data.local.datasource.CharacterLocalDataSource
 import com.amr.core.data.local.datasource.CharacterLookupLocalDataSource
 import com.amr.core.data.local.model.CharacterPagingMetadata
 import com.amr.core.data.remote.datasource.CharacterRemoteDataSource
+import com.amr.core.data.remote.dto.CharacterDto
 import com.amr.core.data.remote.dto.CharacterResponseDto
 import com.amr.core.data.remote.dto.PageInfoDto
 import com.amr.core.domain.model.Character
+import com.amr.core.domain.model.Episode
+import com.amr.core.domain.model.Location
+import com.amr.core.domain.model.PaginationState
+import com.amr.core.domain.repository.EpisodeRepository
+import com.amr.core.domain.repository.LocationRepository
+import com.amr.feature.episode.detail.EpisodeDetailViewModel
+import com.amr.feature.episode.presentation.EpisodeListViewModel
+import com.amr.feature.location.detail.LocationDetailViewModel
+import com.amr.feature.location.presentation.LocationListViewModel
 import com.amr.core.domain.repository.CharacterRepository
 import com.amr.core.domain.usecase.ObserveCharactersUseCase
 import com.amr.core.domain.usecase.RefreshCharactersUseCase
@@ -56,6 +66,7 @@ class KoinModulesTest {
                     gender: String?
                 ) = empty
                 override suspend fun getCharacter(id: Int) = error("not used")
+                override suspend fun getCharactersByIds(ids: List<Int>) = emptyList<CharacterDto>()
             }
         }
         single<CharacterLocalDataSource> {
@@ -81,6 +92,29 @@ class KoinModulesTest {
                 }
             }
         }
+        // Location/episode repositories need Room DAOs; stubbed so the graph test stays on the JVM.
+        single<LocationRepository> {
+            object : LocationRepository {
+                override fun observeLocations(): Flow<List<Location>> = flowOf(emptyList())
+                override fun observePaginationState(): Flow<PaginationState> = flowOf(PaginationState.Uninitialized)
+                override suspend fun refreshLocations() = Unit
+                override suspend fun loadNextPage() = Unit
+                override fun observeLocation(id: Int): Flow<Location?> = flowOf(null)
+                override fun observeResidentIds(id: Int): Flow<List<Int>> = flowOf(emptyList())
+                override suspend fun refreshLocation(id: Int) = Unit
+            }
+        }
+        single<EpisodeRepository> {
+            object : EpisodeRepository {
+                override fun observeEpisodes(): Flow<List<Episode>> = flowOf(emptyList())
+                override fun observePaginationState(): Flow<PaginationState> = flowOf(PaginationState.Uninitialized)
+                override suspend fun refreshEpisodes() = Unit
+                override suspend fun loadNextPage() = Unit
+                override fun observeEpisode(id: Int): Flow<Episode?> = flowOf(null)
+                override fun observeCharacterIds(id: Int): Flow<List<Int>> = flowOf(emptyList())
+                override suspend fun refreshEpisode(id: Int) = Unit
+            }
+        }
         single<CharacterLookupLocalDataSource> {
             object : CharacterLookupLocalDataSource {
                 override fun observeSearch(
@@ -90,6 +124,8 @@ class KoinModulesTest {
                     gender: String?
                 ): Flow<List<Character>> = flowOf(emptyList())
                 override fun observeCharacter(id: Int): Flow<Character?> = flowOf(null)
+                override fun observeCharacters(ids: List<Int>): Flow<List<Character>> = flowOf(emptyList())
+                override suspend fun getCachedIds(ids: List<Int>): Set<Int> = emptySet()
                 override suspend fun saveFetchedCharacters(characters: List<Character>) = Unit
                 override fun observeFavorites(): Flow<List<Character>> = flowOf(emptyList())
                 override fun observeIsFavorite(id: Int): Flow<Boolean> = flowOf(false)
@@ -124,6 +160,10 @@ class KoinModulesTest {
         assertNotNull(koin.get<CharacterSearchViewModel>())
         assertNotNull(koin.get<FavoritesViewModel>())
         assertNotNull(koin.get<CharacterDetailViewModel> { parametersOf(1) })
+        assertNotNull(koin.get<LocationListViewModel>())
+        assertNotNull(koin.get<LocationDetailViewModel> { parametersOf(3) })
+        assertNotNull(koin.get<EpisodeListViewModel>())
+        assertNotNull(koin.get<EpisodeDetailViewModel> { parametersOf(1) })
     }
 
     @Test

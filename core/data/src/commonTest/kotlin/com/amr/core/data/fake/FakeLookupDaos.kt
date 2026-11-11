@@ -7,6 +7,7 @@ import com.amr.core.database.entity.FavoriteCharacterEntity
 import com.amr.core.database.entity.SearchCharacterEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -26,6 +27,25 @@ class FakeSearchCharacterDao : SearchCharacterDao {
         rows.map { list -> list.firstOrNull { it.id == id } }
 
     override suspend fun countCharacters(): Int = rows.value.size
+
+    /** List-cache rows the fake should treat as cached too (set by tests that need them). */
+    val listRows = MutableStateFlow<List<CharacterEntity>>(emptyList())
+
+    override fun observeCharactersByIds(ids: List<Int>): Flow<List<CharacterEntity>> =
+        combine(listRows, rows) { list, search ->
+            val listIds = list.map { it.id }.toSet()
+            list.filter { it.id in ids } + search
+                .filter { it.id in ids && it.id !in listIds }
+                .map {
+                    CharacterEntity(
+                        it.id, it.name, it.status, it.species, it.imageUrl, it.type, it.gender,
+                        it.originName, it.originId, it.locationName, it.locationId, it.episodeIds
+                    )
+                }
+        }
+
+    override suspend fun getCachedCharacterIds(ids: List<Int>): List<Int> =
+        (listRows.value.map { it.id } + rows.value.map { it.id }).filter { it in ids }.distinct()
 
     /** Last maxEntries passed to [upsertAndEvict]; the eviction SQL itself is tested on Room. */
     var lastMaxEntries: Int? = null

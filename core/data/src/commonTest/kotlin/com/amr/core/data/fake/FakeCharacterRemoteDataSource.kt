@@ -70,6 +70,21 @@ class FakeCharacterRemoteDataSource : CharacterRemoteDataSource {
         return characters[id] ?: throw NetworkException.NotFound()
     }
 
+    // --- batch by ids ---
+
+    /** Each batch of ids requested, in order. */
+    val requestedBatches = mutableListOf<List<Int>>()
+    var batchError: Exception? = null
+    var batchGate: CompletableDeferred<Unit>? = null
+
+    /** Answers from [characters]; unknown ids are dropped, as the API does. */
+    override suspend fun getCharactersByIds(ids: List<Int>): List<CharacterDto> {
+        requestedBatches += ids
+        batchGate?.await()
+        batchError?.let { throw it }
+        return ids.mapNotNull { characters[it] }
+    }
+
     fun failWithNoInternet() {
         errorToThrow = NetworkException.NoInternet()
     }

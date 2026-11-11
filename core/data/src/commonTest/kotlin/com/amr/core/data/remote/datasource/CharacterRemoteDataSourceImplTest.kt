@@ -115,6 +115,62 @@ class CharacterRemoteDataSourceImplTest {
         }
     }
 
+    // --- getCharactersByIds: one id answers with an object, several with an array ---
+
+    @Test
+    fun getCharactersByIds_singleId_usesObjectEndpoint() = runTest {
+        var requestPath: String? = null
+        val dataSource = createDataSource { request ->
+            requestPath = request.url.encodedPath
+            respond(content = rickJson, status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+
+        val dtos = dataSource.getCharactersByIds(listOf(1))
+
+        assertEquals("/api/character/1", requestPath)
+        assertEquals(listOf(1), dtos.map { it.id })
+    }
+
+    @Test
+    fun getCharactersByIds_severalIds_usesArrayEndpointWithPlainCommas() = runTest {
+        var requestPath: String? = null
+        val dataSource = createDataSource { request ->
+            requestPath = request.url.encodedPath
+            respond(content = "[$rickJson, ${rickJson.replace("\"id\": 1", "\"id\": 2")}]", status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+
+        val dtos = dataSource.getCharactersByIds(listOf(1, 2))
+
+        assertEquals("/api/character/1,2", requestPath)
+        assertEquals(listOf(1, 2), dtos.map { it.id })
+    }
+
+    @Test
+    fun getCharactersByIds_unknownSingleId_isEmptyNotAnError() = runTest {
+        val dataSource = createDataSource {
+            respond(
+                content = """{ "error": "Character not found" }""",
+                status = HttpStatusCode.NotFound,
+                headers = jsonHeaders
+            )
+        }
+
+        assertEquals(emptyList(), dataSource.getCharactersByIds(listOf(99999)))
+    }
+
+    @Test
+    fun getCharactersByIds_emptyOrTooMany_makesNoRequest() = runTest {
+        var requests = 0
+        val dataSource = createDataSource {
+            requests++
+            respond(content = "[]", status = HttpStatusCode.OK, headers = jsonHeaders)
+        }
+
+        assertEquals(emptyList(), dataSource.getCharactersByIds(emptyList()))
+        assertFailsWith<IllegalArgumentException> { dataSource.getCharactersByIds((1..51).toList()) }
+        assertEquals(0, requests)
+    }
+
     @Test
     fun getCharacter_requestsCharacterPathAndParsesDetail() = runTest {
         var requestPath: String? = null

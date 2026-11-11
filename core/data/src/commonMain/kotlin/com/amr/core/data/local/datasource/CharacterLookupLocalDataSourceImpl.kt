@@ -45,6 +45,12 @@ class CharacterLookupLocalDataSourceImpl(
         }
     }
 
+    override fun observeCharacters(ids: List<Int>): Flow<List<Character>> =
+        searchCharacterDao.observeCharactersByIds(ids).map { rows -> rows.map { it.toDomain() } }
+
+    override suspend fun getCachedIds(ids: List<Int>): Set<Int> =
+        searchCharacterDao.getCachedCharacterIds(ids).toSet()
+
     /**
      * Each write is idempotent, so a partially applied save is corrected by the
      * next fetch of the same characters.

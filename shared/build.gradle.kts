@@ -56,6 +56,8 @@ kotlin {
             implementation(project(":core:database"))
             implementation(project(":core:domain"))
             implementation(project(":feature:character"))
+            implementation(project(":feature:location"))
+            implementation(project(":feature:episode"))
         }
     }
 }

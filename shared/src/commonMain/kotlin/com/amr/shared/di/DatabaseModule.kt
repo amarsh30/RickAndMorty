@@ -4,6 +4,8 @@ import androidx.room.RoomDatabase
 import com.amr.core.database.CharacterDatabase
 import com.amr.core.database.createCharacterDatabase
 import com.amr.core.database.dao.CharacterDao
+import com.amr.core.database.dao.EpisodeDao
+import com.amr.core.database.dao.LocationDao
 import com.amr.core.database.dao.FavoriteCharacterDao
 import com.amr.core.database.dao.SearchCharacterDao
 import org.koin.dsl.module
@@ -29,4 +31,8 @@ val databaseModule = module {
     single<FavoriteCharacterDao> {
         get<CharacterDatabase>().favoriteCharacterDao()
     }
+
+    single<LocationDao> { get<CharacterDatabase>().locationDao() }
+
+    single<EpisodeDao> { get<CharacterDatabase>().episodeDao() }
 }

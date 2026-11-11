@@ -21,6 +21,41 @@ interface SearchCharacterDao {
     suspend fun countCharacters(): Int
 
     /**
+     * The cached characters among [ids], one row per id (list cache first, then
+     * search cache, then favorite snapshot). Order is unspecified.
+     */
+    @Query(
+        """
+        SELECT id, name, status, species, imageUrl, type, gender,
+               originName, originId, locationName, locationId, episodeIds
+        FROM characters WHERE id IN (:ids)
+        UNION ALL
+        SELECT id, name, status, species, imageUrl, type, gender,
+               originName, originId, locationName, locationId, episodeIds
+        FROM search_characters
+        WHERE id IN (:ids) AND id NOT IN (SELECT id FROM characters)
+        UNION ALL
+        SELECT id, name, status, species, imageUrl, type, gender,
+               originName, originId, locationName, locationId, episodeIds
+        FROM favorite_characters
+        WHERE id IN (:ids)
+          AND id NOT IN (SELECT id FROM characters)
+          AND id NOT IN (SELECT id FROM search_characters)
+        """
+    )
+    fun observeCharactersByIds(ids: List<Int>): Flow<List<CharacterEntity>>
+
+    /** Which of [ids] are cached in any character table. */
+    @Query(
+        """
+        SELECT id FROM characters WHERE id IN (:ids)
+        UNION SELECT id FROM search_characters WHERE id IN (:ids)
+        UNION SELECT id FROM favorite_characters WHERE id IN (:ids)
+        """
+    )
+    suspend fun getCachedCharacterIds(ids: List<Int>): List<Int>
+
+    /**
      * Keeps the [maxEntries] most recently updated rows and deletes the rest.
      * Ties on updatedAt are broken by id: the lower id is evicted first.
      * Only touches search_characters.

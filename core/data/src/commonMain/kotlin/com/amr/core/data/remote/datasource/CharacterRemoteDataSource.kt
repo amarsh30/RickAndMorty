@@ -16,7 +16,14 @@ interface CharacterRemoteDataSource {
 
     suspend fun getCharacter(id: Int): CharacterDto
 
+    /**
+     * The characters with the given ids (at most [MAX_IDS_PER_REQUEST]). Ids the API
+     * does not know are missing from the result, as the API itself drops them.
+     */
+    suspend fun getCharactersByIds(ids: List<Int>): List<CharacterDto>
+
     companion object {
         const val FIRST_PAGE = 1
+        const val MAX_IDS_PER_REQUEST = 50
     }
 }

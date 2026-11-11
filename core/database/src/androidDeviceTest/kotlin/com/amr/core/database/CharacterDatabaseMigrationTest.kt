@@ -141,6 +141,91 @@ class CharacterDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate5To6_addsEmptyLocationAndEpisodeTables_andKeepsEverythingElse() = runTest {
+        createVersion5Database()
+
+        val database = Room.databaseBuilder<CharacterDatabase>(context, dbFile.absolutePath)
+            .setDriver(BundledSQLiteDriver())
+            .setQueryCoroutineContext(Dispatchers.IO)
+            .build()
+
+        try {
+            assertEquals(
+                listOf(CharacterEntity(1, "Rick Sanchez", "Alive", "Human", "rick.png")),
+                database.characterDao().observeCharacters().first()
+            )
+            assertEquals(2, database.characterDao().getPagingState()?.nextPage)
+            assertEquals(
+                1_700_000_000_000L,
+                database.searchCharacterDao().observeCharacter(7).first()?.updatedAt
+            )
+            assertEquals(1, database.favoriteCharacterDao().observeFavorites().first().size)
+
+            // New tables exist and start empty, with no assumed pagination metadata.
+            assertEquals(emptyList(), database.locationDao().observeListLocations().first())
+            assertEquals(emptyList(), database.locationDao().observeResidentIds(1).first())
+            assertNull(database.locationDao().getPagingState())
+            assertEquals(emptyList(), database.episodeDao().observeListEpisodes().first())
+            assertEquals(emptyList(), database.episodeDao().observeCharacterIds(1).first())
+            assertNull(database.episodeDao().getPagingState())
+        } finally {
+            database.close()
+        }
+    }
+
+    private fun createVersion5Database() {
+        BundledSQLiteDriver().open(dbFile.absolutePath).apply {
+            try {
+                // Exact statements from schemas/com.amr.core.database.CharacterDatabase/5.json.
+                val characterColumns = "`id` INTEGER NOT NULL, `name` TEXT NOT NULL, " +
+                    "`status` TEXT NOT NULL, `species` TEXT NOT NULL, `imageUrl` TEXT, `type` TEXT, " +
+                    "`gender` TEXT, `originName` TEXT, `originId` INTEGER, `locationName` TEXT, " +
+                    "`locationId` INTEGER, `episodeIds` TEXT"
+                execSQL("CREATE TABLE IF NOT EXISTS `characters` ($characterColumns, PRIMARY KEY(`id`))")
+                execSQL(
+                    "CREATE TABLE IF NOT EXISTS `character_paging_state` (`id` INTEGER NOT NULL, " +
+                        "`nextPage` INTEGER, `totalPages` INTEGER, PRIMARY KEY(`id`))"
+                )
+                execSQL(
+                    "CREATE TABLE IF NOT EXISTS `search_characters` ($characterColumns, " +
+                        "`updatedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))"
+                )
+                execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_search_characters_updatedAt` " +
+                        "ON `search_characters` (`updatedAt`)"
+                )
+                execSQL("CREATE TABLE IF NOT EXISTS `favorite_characters` ($characterColumns, PRIMARY KEY(`id`))")
+                execSQL(
+                    "CREATE TABLE IF NOT EXISTS room_master_table " +
+                        "(id INTEGER PRIMARY KEY,identity_hash TEXT)"
+                )
+                execSQL(
+                    "INSERT OR REPLACE INTO room_master_table (id,identity_hash) " +
+                        "VALUES(42, '$VERSION_5_IDENTITY_HASH')"
+                )
+                execSQL(
+                    "INSERT INTO characters (id, name, status, species, imageUrl) VALUES " +
+                        "(1, 'Rick Sanchez', 'Alive', 'Human', 'rick.png')"
+                )
+                execSQL(
+                    "INSERT INTO character_paging_state (id, nextPage, totalPages) VALUES (0, 2, 42)"
+                )
+                execSQL(
+                    "INSERT INTO search_characters (id, name, status, species, updatedAt) VALUES " +
+                        "(7, 'Birdperson', 'Alive', 'Alien', 1700000000000)"
+                )
+                execSQL(
+                    "INSERT INTO favorite_characters (id, name, status, species, imageUrl) VALUES " +
+                        "(1, 'Rick Sanchez', 'Alive', 'Human', 'rick.png')"
+                )
+                execSQL("PRAGMA user_version = 5")
+            } finally {
+                close()
+            }
+        }
+    }
+
     private fun createVersion4Database() {
         BundledSQLiteDriver().open(dbFile.absolutePath).apply {
             try {
@@ -261,5 +346,6 @@ class CharacterDatabaseMigrationTest {
         const val VERSION_2_IDENTITY_HASH = "58c5f7f98fe24528bd012bb8192ae9de"
         const val VERSION_3_IDENTITY_HASH = "a07b30bc02c016e470bd6fe823d662cf"
         const val VERSION_4_IDENTITY_HASH = "4ffcd8b9f9a2c82439811bd9a47ef89f"
+        const val VERSION_5_IDENTITY_HASH = "a978173a89776a42765bcf95b14906fa"
     }
 }

@@ -14,5 +14,13 @@ gradlePlugin {
             id = "amr.kmp.test"
             implementationClass = "KmpTestConventionPlugin"
         }
+        register("kmpLibrary") {
+            id = "amr.kmp.library"
+            implementationClass = "KmpLibraryConventionPlugin"
+        }
+        register("kmpFeature") {
+            id = "amr.kmp.feature"
+            implementationClass = "KmpFeatureConventionPlugin"
+        }
     }
 }
