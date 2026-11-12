@@ -1,6 +1,4 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# Project R8 rules for the release build.
 #
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
@@ -16,6 +14,6 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Readable stack traces in crash reports (deobfuscate with the build's mapping.txt).
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

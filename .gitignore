@@ -17,3 +17,10 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Signing material and build artifacts must never be committed.
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
