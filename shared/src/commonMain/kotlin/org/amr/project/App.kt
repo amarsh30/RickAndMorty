@@ -1,21 +1,12 @@
 
 package org.amr.project
 
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.amr.core.designsystem.theme.AppTheme
 import com.amr.core.domain.model.AppConnectivity
 import com.amr.core.domain.usecase.ObserveAppConnectivityUseCase
 import org.koin.mp.KoinPlatform
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,7 +14,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -36,12 +26,15 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.amr.feature.character.detail.CharacterDetailScreen
 import com.amr.feature.character.favorite.FavoritesScreen
-import com.amr.feature.character.presentation.CharacterScreen
+import com.amr.feature.character.presentation.CharacterListDetailScreen
 import com.amr.feature.character.search.CharacterSearchScreen
 import com.amr.feature.episode.detail.EpisodeDetailScreen
 import com.amr.feature.episode.presentation.EpisodeListScreen
 import com.amr.feature.location.detail.LocationDetailScreen
 import com.amr.feature.location.presentation.LocationListScreen
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.serialization.Serializable
 import kotlin.reflect.KClass
 
@@ -92,7 +85,7 @@ internal fun TopLevelTab.testTag() = "tab_${name.lowercase()}"
 
 @Composable
 fun App() {
-    MaterialTheme {
+    AppTheme {
         val navController = rememberNavController()
         val currentEntry by navController.currentBackStackEntryAsState()
         var selectedTab by rememberSaveable { mutableStateOf(TopLevelTab.CHARACTERS) }
@@ -110,35 +103,21 @@ fun App() {
         val connectivity by remember(observeConnectivity) { observeConnectivity() }
             .collectAsStateWithLifecycle(initialValue = AppConnectivity.Normal)
 
-        Scaffold(
-            topBar = { ConnectivityBanner(connectivity, Modifier.windowInsetsPadding(WindowInsets.statusBars)) },
-            bottomBar = {
-                NavigationBar {
-                    TopLevelTab.entries.forEach { tab ->
-                        NavigationBarItem(
-                            selected = tab == selectedTab,
-                            onClick = {
-                                selectedTab = tab
-                                navController.switchTab(tab)
-                            },
-                            icon = {},
-                            label = { Text(tab.label) },
-                            modifier = Modifier.testTag(tab.testTag())
-                        )
-                    }
-                }
-            }
-        ) { innerPadding ->
-            AppNavHost(
-                navController = navController,
-                modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
-            )
+        AppShell(
+            selectedTab = selectedTab,
+            onTabSelected = { tab ->
+                selectedTab = tab
+                navController.switchTab(tab)
+            },
+            connectivity = connectivity
+        ) { contentModifier ->
+            AppNavHost(navController = navController, modifier = contentModifier)
         }
     }
 }
 
 /** Each tab keeps its own back stack and scroll state across switches. */
-private fun NavHostController.switchTab(tab: TopLevelTab) {
+internal fun NavHostController.switchTab(tab: TopLevelTab) {
     navigate(tab.graph) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
@@ -156,10 +135,30 @@ private fun AppNavHost(navController: NavHostController, modifier: Modifier) {
     NavHost(navController = navController, startDestination = CharactersGraph, modifier = modifier) {
         navigation<CharactersGraph>(startDestination = CharacterListRoute) {
             composable<CharacterListRoute> {
-                CharacterScreen(
-                    onCharacterClick = openCharacter,
+                // Two-pane selection, saved in this destination's state (survives rotation,
+                // resize and tab switches). Single-pane taps still navigate to CharacterDetailRoute.
+                var selectedCharacterId by rememberSaveable { mutableStateOf<Int?>(null) }
+                // Back clears the selection first; otherwise navigation handles it as before.
+                val backState = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
+                NavigationBackHandler(
+                    state = backState,
+                    isBackEnabled = selectedCharacterId != null,
+                    onBackCompleted = { selectedCharacterId = null }
+                )
+                CharacterListDetailScreen(
+                    selectedCharacterId = selectedCharacterId,
+                    onSelectedCharacterChange = { selectedCharacterId = it },
+                    onOpenCharacter = openCharacter,
                     onSearchClick = { navController.navigate(CharacterSearchRoute) },
-                    onFavoritesClick = { navController.navigate(FavoritesRoute) }
+                    onFavoritesClick = { navController.navigate(FavoritesRoute) },
+                    detail = { characterId, onBack ->
+                        CharacterDetailScreen(
+                            characterId = characterId,
+                            onBack = onBack ?: {},
+                            showBackButton = onBack != null,
+                            onLocationClick = openLocation
+                        )
+                    }
                 )
             }
             composable<CharacterSearchRoute> {

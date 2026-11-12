@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    // Host/device/UI tests for the theme and shared components.
+    id("amr.kmp.test")
 }
 
 kotlin {
@@ -23,9 +25,11 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlin.stdlib)
 
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material3)
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material3)
+            // ImageVector icons and graphics (already in the catalog).
+            implementation(libs.compose.ui)
         }
     }
 }

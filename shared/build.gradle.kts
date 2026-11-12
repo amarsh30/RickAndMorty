@@ -55,6 +55,7 @@ kotlin {
             implementation(project(":core:network"))
             implementation(project(":core:database"))
             implementation(project(":core:domain"))
+            implementation(project(":core:designsystem"))
             implementation(project(":feature:character"))
             implementation(project(":feature:location"))
             implementation(project(":feature:episode"))

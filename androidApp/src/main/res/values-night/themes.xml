@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark launch window so dark mode has no white flash before Compose draws. -->
+    <style name="Theme.RickAndMorty" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF101214</item>
+    </style>
+</resources>

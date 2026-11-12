@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch window only; the UI itself is drawn by Compose AppTheme. -->
+    <style name="Theme.RickAndMorty" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFF8F9FA</item>
+    </style>
+</resources>

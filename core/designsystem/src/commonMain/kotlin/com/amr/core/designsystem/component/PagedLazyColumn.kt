@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.filter
 const val PAGED_LIST_LOAD_MORE_INDICATOR_TAG = "paged_list_load_more_indicator"
 
 /** Load the next page when the last visible item is within this many items of the end. */
-private const val LOAD_MORE_THRESHOLD = 5
+internal const val LOAD_MORE_THRESHOLD = 5
 
 /**
  * A list that asks for more items when its end comes into view and shows the
@@ -106,7 +106,7 @@ private fun LoadMoreWhenNearEnd(
 }
 
 @Composable
-private fun LoadMoreFooter(
+internal fun LoadMoreFooter(
     isLoadingMore: Boolean,
     loadMoreErrorMessage: String?,
     isEndReached: Boolean,

@@ -2,7 +2,40 @@ package com.amr.feature.character.presentation
 
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import com.amr.core.designsystem.component.INFO_BANNER_TAG
+import com.amr.core.designsystem.component.SKELETON_LIST_TAG
+import com.amr.core.designsystem.component.STATUS_CHIP_TAG
+import com.amr.core.designsystem.theme.AppTheme
+import com.amr.feature.character.component.CHARACTER_GRID_TAG
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyDescendant
@@ -151,9 +184,154 @@ class CharacterScreenTest {
 
         setContent { CharacterScreen(viewModel = createViewModel(repository)) }
 
-        onNodeWithText("Rick and Morty Characters").assertIsDisplayed()
+        onNodeWithText("Karakter").assertIsDisplayed()
         onNodeWithText("Rick Sanchez").assertIsDisplayed()
         onNodeWithText("Morty Smith").assertIsDisplayed()
+    }
+
+    @Test
+    fun card_showsNameSpeciesAndStatusChip() = runComposeUiTest {
+        val dead = Character(3, "Birdperson", "Dead", "Bird-Person", null)
+        val repository = FakeCharacterRepository().apply { refreshResult = listOf(rick, dead) }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Birdperson").assertIsDisplayed()
+        onNodeWithText("Bird-Person").assertIsDisplayed()
+        onAllNodesWithTag(STATUS_CHIP_TAG).assertCountEquals(2)
+        onNode(hasTestTag(STATUS_CHIP_TAG) and hasText("Dead")).assertIsDisplayed()
+        // The card is one clickable node with a 48dp+ target.
+        onNode(hasClickAction() and hasText("Birdperson")).assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun initialLoading_showsSkeletonAsSingleLoadingNode() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            this.gate = gate
+            refreshResult = listOf(rick)
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithTag(SKELETON_LIST_TAG).assertIsDisplayed()
+        onNodeWithContentDescription("Memuat").assertIsDisplayed()
+        // No placeholder card is exposed as content.
+        onAllNodes(hasClickAction() and hasAnyAncestor(hasTestTag(SKELETON_LIST_TAG))).assertCountEquals(0)
+
+        gate.complete(Unit)
+        onNodeWithTag(SKELETON_LIST_TAG).assertDoesNotExist()
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+    }
+
+    @Test
+    fun refreshFailureWithCache_isAnInlineBannerAboveTheList() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply {
+            characters.value = listOf(rick)
+            errorToThrow = DataError.NoConnection()
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNode(hasTestTag(INFO_BANNER_TAG) and hasAnyDescendant(hasText("Gagal memperbarui data. Menampilkan data tersimpan.")))
+            .assertIsDisplayed()
+        onNodeWithText("Rick Sanchez").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactWidth_isSingleColumn_wideWidth_isMultiColumnGrid() = runComposeUiTest {
+        var width by mutableStateOf(400.dp)
+        val repository = FakeCharacterRepository().apply { refreshResult = listOf(rick, morty) }
+        val viewModel = createViewModel(repository)
+
+        setContent { WidthBox(width) { CharacterScreen(viewModel = viewModel) } }
+
+        val rickTop = { onNodeWithText("Rick Sanchez").getUnclippedBoundsInRoot().top }
+        val mortyTop = { onNodeWithText("Morty Smith").getUnclippedBoundsInRoot().top }
+        assertTrue(mortyTop() > rickTop(), "compact: Morty is below Rick")
+
+        width = 900.dp
+        waitForIdle()
+        assertEquals(rickTop(), mortyTop(), "wide: Rick and Morty share a row")
+    }
+
+    @Test
+    fun resizing_keepsScrollPosition() = runComposeUiTest {
+        var width by mutableStateOf(400.dp)
+        val characters = manyCharacters(60)
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = characters
+            paginationState.value = PaginationState.EndReached
+        }
+        val viewModel = createViewModel(repository)
+
+        setContent { WidthBox(width) { CharacterScreen(viewModel = viewModel) } }
+
+        onNodeWithTag(CHARACTER_GRID_TAG).performScrollToIndex(40)
+        onNodeWithText("Character 41").assertIsDisplayed()
+
+        width = 900.dp
+        waitForIdle()
+        onNodeWithText("Character 41").assertIsDisplayed()
+        onNodeWithText("Character 1").assertDoesNotExist()
+    }
+
+    @Test
+    fun largeFontScale_keepsNameAndStatusReadable() = runComposeUiTest {
+        val longName = Character(4, "Abradolf Lincler the Second", "unknown", "Human", null)
+        val repository = FakeCharacterRepository().apply { refreshResult = listOf(longName) }
+
+        setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                WidthBox(360.dp) { CharacterScreen(viewModel = createViewModel(repository)) }
+            }
+        }
+
+        // Name wraps to two lines instead of being cut off, and the status stays visible.
+        onNodeWithText("Abradolf Lincler the Second").assertIsDisplayed()
+        assertFalse(textOverflows("Abradolf Lincler the Second"))
+        onNode(hasTestTag(STATUS_CHIP_TAG) and hasText("unknown")).assertIsDisplayed()
+    }
+
+    private fun androidx.compose.ui.test.SemanticsNodeInteractionsProvider.textOverflows(text: String): Boolean {
+        val results = mutableListOf<TextLayoutResult>()
+        onNodeWithText(text).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+        return results.first().hasVisualOverflow
+    }
+
+    @Composable
+    private fun WidthBox(width: Dp, content: @Composable () -> Unit) {
+        // requiredSize simulates a window wider than the test device, anchored at the start edge.
+        Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true).requiredSize(width, 800.dp)) {
+            AppTheme { content() }
+        }
+    }
+
+    @Test
+    fun topBar_searchAndFavoriteActions_areLabelledButtonsThatNavigate() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply { refreshResult = listOf(rick) }
+        var searches = 0
+        var favorites = 0
+
+        setContent {
+            CharacterScreen(
+                onSearchClick = { searches++ },
+                onFavoritesClick = { favorites++ },
+                viewModel = createViewModel(repository)
+            )
+        }
+
+        // Title is a heading; the icon actions are announced by their labels as buttons.
+        onNodeWithText("Karakter").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+        onNodeWithContentDescription("Cari")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        onNodeWithContentDescription("Favorit").assertHeightIsAtLeast(48.dp).performClick()
+
+        assertEquals(1, searches)
+        assertEquals(1, favorites)
     }
 
     @Test
