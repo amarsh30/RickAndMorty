@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amr.core.designsystem.component.AppEmpty
 import com.amr.core.designsystem.component.AppError
+import com.amr.core.designsystem.component.AppRefreshAction
 import com.amr.core.designsystem.component.AppTopBar
 import com.amr.core.designsystem.component.InfoBanner
 import com.amr.core.designsystem.component.InfoBannerTone
@@ -59,7 +60,15 @@ internal fun LocationListContent(
     onLocationClick: (Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        AppTopBar(title = "Lokasi")
+        AppTopBar(
+            title = "Lokasi",
+            actions = {
+                // Only beside a shown list; empty and error states have their own load button.
+                if (!state.isLoading && state.locations.isNotEmpty()) {
+                    AppRefreshAction(isRefreshing = state.isRefreshing, onRefresh = onRetry)
+                }
+            }
+        )
 
         when {
             // One "loading" node for screen readers; the placeholder rows are hidden.

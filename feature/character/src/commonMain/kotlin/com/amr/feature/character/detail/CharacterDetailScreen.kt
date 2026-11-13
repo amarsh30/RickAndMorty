@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +40,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amr.core.designsystem.component.AppError
 import com.amr.core.designsystem.component.AppLoading
+import com.amr.core.designsystem.component.REFRESHING_LABEL
 import com.amr.core.designsystem.component.AppTopBar
 import com.amr.core.designsystem.component.InfoBanner
 import com.amr.core.designsystem.component.InfoBannerTone
@@ -122,7 +124,9 @@ internal fun CharacterDetailContent(
                 verticalArrangement = Arrangement.spacedBy(AppThemeTokens.spacing.md)
             ) {
                 if (state.isRefreshing) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = REFRESHING_LABEL }
+                )
                 }
                 // Cached detail is still shown when a refresh fails.
                 state.errorMessage?.let { message ->

@@ -30,6 +30,11 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.component.INFO_BANNER_TAG
+import com.amr.core.designsystem.component.LOAD_MORE_LOADING_LABEL
+import com.amr.core.designsystem.component.REFRESH_LABEL
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import com.amr.core.designsystem.component.SKELETON_LIST_TAG
 import com.amr.core.designsystem.component.STATUS_CHIP_TAG
 import com.amr.core.designsystem.theme.AppTheme
@@ -332,6 +337,72 @@ class CharacterScreenTest {
 
         assertEquals(1, searches)
         assertEquals(1, favorites)
+    }
+
+    // --- Accessible refresh (6C.2A) ---
+
+    @Test
+    fun topBar_refreshAction_isLabelledButtonThatRefreshes_andIsDisabledWhileRefreshing() = runComposeUiTest {
+        val repository = FakeCharacterRepository().apply {
+            characters.value = listOf(rick)
+            refreshResult = listOf(rick)
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+        waitForIdle()
+        assertEquals(1, repository.refreshCount) // automatic refresh on start
+
+        val gate = CompletableDeferred<Unit>()
+        repository.gate = gate
+        onNodeWithContentDescription(REFRESH_LABEL)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertIsEnabled()
+            .performClick()
+        waitForIdle()
+        assertEquals(2, repository.refreshCount)
+
+        // Same callback as pull-to-refresh; disabled (and announced so) while one is running.
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsNotEnabled().performClick()
+        waitForIdle()
+        assertEquals(2, repository.refreshCount)
+
+        gate.complete(Unit)
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsEnabled()
+    }
+
+    @Test
+    fun topBar_refreshAction_isHiddenWhenThereIsNoListToRefresh() = runComposeUiTest {
+        val repository = FakeCharacterRepository() // empty: the empty state has its own load button
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithText("Belum ada karakter").assertIsDisplayed()
+        onNodeWithContentDescription(REFRESH_LABEL).assertDoesNotExist()
+    }
+
+    // --- Pagination semantics (6C.2A) ---
+
+    @Test
+    fun loadMoreIndicator_isLabelled_andLoadMoreErrorIsAPoliteLiveRegion() = runComposeUiTest {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeCharacterRepository().apply {
+            refreshResult = listOf(rick)
+            paginationState.value = PaginationState.HasMore
+            loadNextPageGate = gate
+            loadNextPageError = DataError.NoConnection()
+        }
+
+        setContent { CharacterScreen(viewModel = createViewModel(repository)) }
+
+        onNodeWithTag(CHARACTER_LOAD_MORE_INDICATOR_TAG)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf(LOAD_MORE_LOADING_LABEL)))
+
+        gate.complete(Unit)
+
+        onNodeWithText("Gagal memuat karakter. Periksa koneksi internet.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        onNodeWithText("Muat Lagi").assert(hasClickAction())
     }
 
     @Test

@@ -58,6 +58,23 @@ class FavoritesScreenTest {
         onNodeWithText("Gagal membaca favorit tersimpan.").assertIsDisplayed()
     }
 
+    /** Regression: the error button used to say "Coba Lagi" (retry) while it navigated back. */
+    @Test
+    fun error_actionIsLabelledAsTheNavigationItPerforms() = runComposeUiTest {
+        var backs = 0
+        setContent {
+            FavoritesContent(
+                FavoritesUiState(isLoading = false, errorMessage = "Gagal membaca favorit tersimpan."),
+                onBack = { backs++ },
+                onCharacterClick = {}
+            )
+        }
+
+        onNodeWithText("Coba Lagi").assertDoesNotExist()
+        onNodeWithText(BACK_TO_CHARACTERS_LABEL).assertHeightIsAtLeast(48.dp).performClick()
+        assertEquals(1, backs)
+    }
+
     @Test
     fun favorites_areListed_andClickOpensDetail() = runComposeUiTest {
         var clicked: Int? = null

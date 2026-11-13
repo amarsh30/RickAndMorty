@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.icon.AppIcons
 
 const val BACK_LABEL = "Kembali"
+const val REFRESH_LABEL = "Muat ulang"
 
 /**
  * Material 3 top app bar used by every screen: a single-line title (announced as a
@@ -52,12 +53,35 @@ fun AppBackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     AppBarAction(icon = AppIcons.ArrowBack, label = BACK_LABEL, onClick = onClick, modifier = modifier)
 }
 
+/**
+ * Refresh button: the non-gesture alternative to pull-to-refresh for screen-reader,
+ * keyboard and switch users. Disabled while a refresh is running, so it is never
+ * announced as actionable when a tap would do nothing.
+ */
+@Composable
+fun AppRefreshAction(isRefreshing: Boolean, onRefresh: () -> Unit, modifier: Modifier = Modifier) {
+    AppBarAction(
+        icon = AppIcons.Refresh,
+        label = REFRESH_LABEL,
+        onClick = onRefresh,
+        enabled = !isRefreshing,
+        modifier = modifier
+    )
+}
+
 /** Icon-only app bar action; [label] is its content description. */
 @Composable
-fun AppBarAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun AppBarAction(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
     // M3 IconButton lays out at 40dp; keep the whole 48dp target inside the button itself.
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).focusRing(CircleShape)
     ) {
         Icon(imageVector = icon, contentDescription = label)

@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.component.focusRing
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +62,11 @@ internal const val CHIP_SCROLL_CUE_TAG = "chip_scroll_cue"
 internal const val CLEAR_NAME_LABEL = "Hapus nama"
 internal const val CLEAR_SPECIES_LABEL = "Hapus spesies"
 internal const val CLEAR_ALL_FILTERS_LABEL = "Hapus semua filter"
+internal const val SEARCHING_LABEL = "Mencari"
+internal const val SEARCH_RESULT_COUNT_TAG = "search_result_count"
+internal const val NO_RESULTS_TAG = "search_no_results"
+
+internal fun searchResultCountText(count: Int) = "$count karakter ditemukan"
 
 @Composable
 fun CharacterSearchScreen(
@@ -145,7 +154,23 @@ internal fun CharacterSearchContent(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm)
             ) {
                 if (state.isSearchingRemote) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics { contentDescription = SEARCHING_LABEL }
+                    )
+                }
+                // Results only change after the ViewModel's debounce, so this polite live
+                // region speaks once per settled query rather than on every keystroke.
+                if (!filter.isEmpty && state.results.isNotEmpty()) {
+                    Text(
+                        text = searchResultCountText(state.results.size),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .testTag(SEARCH_RESULT_COUNT_TAG)
+                            .semantics { liveRegion = LiveRegionMode.Polite }
+                    )
                 }
                 if (state.isOfflineResult) {
                     InfoBanner(
@@ -170,7 +195,11 @@ internal fun CharacterSearchContent(
                     icon = AppIcons.Info,
                     title = "Tidak ada karakter yang cocok.",
                     description = "Coba ubah atau hapus sebagian filter.",
-                    modifier = Modifier.fillMaxWidth()
+                    // One merged, polite node, so the outcome of a search is spoken.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(NO_RESULTS_TAG)
+                        .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
                 )
 
                 // Same cards and adaptive layout as the character list; result order is kept.

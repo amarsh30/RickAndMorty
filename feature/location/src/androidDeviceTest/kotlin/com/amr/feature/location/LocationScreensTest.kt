@@ -46,6 +46,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.component.AVATAR_FALLBACK_TAG
 import com.amr.core.designsystem.component.INFO_BANNER_TAG
+import com.amr.core.designsystem.component.REFRESH_LABEL
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import com.amr.core.designsystem.component.SKELETON_LIST_TAG
 import com.amr.core.designsystem.theme.AppTheme
 import com.amr.feature.location.presentation.LOCATION_GRID_TAG
@@ -154,6 +158,38 @@ class LocationScreensTest {
         onNode(hasTestTag(INFO_BANNER_TAG) and hasAnyDescendant(hasText("Gagal memperbarui data. Menampilkan data tersimpan.")))
             .assertIsDisplayed()
         onNodeWithText("Earth (C-137)").assertIsDisplayed()
+    }
+
+    @Test
+    fun list_refreshAction_isLabelledButton_reusesRefresh_andIsDisabledWhileRefreshing() = runComposeUiTest {
+        var state by mutableStateOf(listState(earth))
+        var refreshes = 0
+        setContent { LocationListContent(state, onRetry = { refreshes++ }, onLoadMore = {}, onLocationClick = {}) }
+
+        onNodeWithContentDescription(REFRESH_LABEL)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, refreshes)
+
+        state = state.copy(isRefreshing = true)
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsNotEnabled().performClick()
+        assertEquals(1, refreshes)
+
+        state = state.copy(isRefreshing = false)
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsEnabled().performClick()
+        assertEquals(2, refreshes)
+    }
+
+    @Test
+    fun list_refreshAction_isHiddenWhileLoadingOrEmpty() = runComposeUiTest {
+        var state by mutableStateOf(LocationListUiState(isLoading = true))
+        setContent { LocationListContent(state, {}, {}, {}) }
+        onNodeWithContentDescription(REFRESH_LABEL).assertDoesNotExist()
+
+        state = LocationListUiState(isLoading = false)
+        onNodeWithContentDescription(REFRESH_LABEL).assertDoesNotExist()
     }
 
     @Test

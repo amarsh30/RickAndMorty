@@ -54,6 +54,9 @@ object AppIcons {
     val Cancel by lazy {
         icon("Cancel", "M12,2C6.47,2 2,6.47 2,12s4.47,10 10,10 10,-4.47 10,-10S17.53,2 12,2zM17,15.59L15.59,17 12,13.41 8.41,17 7,15.59 10.59,12 7,8.41 8.41,7 12,10.59 15.59,7 17,8.41 13.41,12 17,15.59z")
     }
+    val Refresh by lazy {
+        icon("Refresh", "M17.65,6.35C16.2,4.9 14.21,4 12,4c-4.42,0 -7.99,3.58 -7.99,8s3.57,8 7.99,8c3.73,0 6.84,-2.55 7.73,-6h-2.08c-0.82,2.33 -3.04,4 -5.65,4 -3.31,0 -6,-2.69 -6,-6s2.69,-6 6,-6c1.66,0 3.14,0.69 4.22,1.78L13,11h7V4l-2.35,2.35z")
+    }
     val Help by lazy {
         icon("Help", "M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zM13,19h-2v-2h2v2zM15.07,11.25l-0.9,0.92C13.45,12.9 13,13.5 13,15h-2v-0.5c0,-1.1 0.45,-2.1 1.17,-2.83l1.24,-1.26c0.37,-0.36 0.59,-0.86 0.59,-1.41 0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2H8c0,-2.21 1.79,-4 4,-4s4,1.79 4,4c0,0.88 -0.36,1.68 -0.93,2.25z")
     }
@@ -62,7 +65,7 @@ object AppIcons {
     internal val all: List<ImageVector>
         get() = listOf(
             Search, Favorite, FavoriteBorder, ArrowBack, Close, ChevronRight, Check,
-            Person, Public, Movie, ErrorOutline, Info, CheckCircle, Cancel, Help
+            Person, Public, Movie, ErrorOutline, Info, CheckCircle, Cancel, Refresh, Help
         )
 }
 

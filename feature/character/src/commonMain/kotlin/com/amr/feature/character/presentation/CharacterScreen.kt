@@ -24,6 +24,7 @@ import com.amr.core.designsystem.component.SkeletonList
 import com.amr.core.designsystem.component.AppError
 import com.amr.core.designsystem.component.AppEmpty
 import com.amr.core.designsystem.component.AppBarAction
+import com.amr.core.designsystem.component.AppRefreshAction
 import com.amr.core.designsystem.component.AppTopBar
 import com.amr.core.designsystem.icon.AppIcons
 import com.amr.feature.character.component.AdaptiveCharacterLayout
@@ -89,6 +90,10 @@ private fun CharacterContent(
             actions = {
                 AppBarAction(icon = AppIcons.Search, label = "Cari", onClick = onSearchClick)
                 AppBarAction(icon = AppIcons.FavoriteBorder, label = "Favorit", onClick = onFavoritesClick)
+                // Only beside a shown list; empty and error states have their own load button.
+                if (!state.isLoading && state.characters.isNotEmpty()) {
+                    AppRefreshAction(isRefreshing = state.isRefreshing, onRefresh = onRetry)
+                }
             }
         )
 

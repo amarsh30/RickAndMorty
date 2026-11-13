@@ -55,6 +55,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import com.amr.core.designsystem.component.INFO_BANNER_TAG
+import com.amr.core.designsystem.component.REFRESH_LABEL
+import com.amr.core.designsystem.component.REFRESHING_LABEL
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 
 /** UI test for the episode screens, driven by fixed UI states. */
 @OptIn(ExperimentalTestApi::class)
@@ -100,6 +105,49 @@ class EpisodeScreensTest {
         setContent { EpisodeListContent(EpisodeListUiState(isLoading = false), {}, {}, {}) }
 
         onNodeWithText("Belum ada episode").assertIsDisplayed()
+    }
+
+    @Test
+    fun list_refreshAction_isLabelledButton_reusesRefresh_andIsDisabledWhileRefreshing() = runComposeUiTest {
+        var state by mutableStateOf(EpisodeListUiState(isLoading = false, episodes = listOf(pilot)))
+        var refreshes = 0
+        setContent { EpisodeListContent(state, onRetry = { refreshes++ }, onLoadMore = {}, onEpisodeClick = {}) }
+
+        onNodeWithContentDescription(REFRESH_LABEL)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .assertIsEnabled()
+            .performClick()
+        assertEquals(1, refreshes)
+
+        state = state.copy(isRefreshing = true)
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsNotEnabled().performClick()
+        assertEquals(1, refreshes)
+
+        state = state.copy(isRefreshing = false)
+        onNodeWithContentDescription(REFRESH_LABEL).assertIsEnabled().performClick()
+        assertEquals(2, refreshes)
+    }
+
+    @Test
+    fun list_refreshAction_isHiddenWhileLoadingOrEmpty() = runComposeUiTest {
+        var state by mutableStateOf(EpisodeListUiState(isLoading = true))
+        setContent { EpisodeListContent(state, {}, {}, {}) }
+        onNodeWithContentDescription(REFRESH_LABEL).assertDoesNotExist()
+
+        state = EpisodeListUiState(isLoading = false)
+        onNodeWithContentDescription(REFRESH_LABEL).assertDoesNotExist()
+    }
+
+    @Test
+    fun detail_loadingAndRefreshingIndicators_areLabelled() = runComposeUiTest {
+        var state by mutableStateOf(EpisodeDetailUiState(isLoading = true))
+        setContent { EpisodeDetailContent(state = state, onBack = {}, onCharacterClick = {}, onRetry = {}, onLoadMoreCharacters = {}) }
+        onNodeWithContentDescription("Memuat").assertIsDisplayed()
+
+        state = EpisodeDetailUiState(isLoading = false, episode = pilot, isRefreshing = true)
+        onNodeWithContentDescription(REFRESHING_LABEL)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate))
     }
 
     @Test

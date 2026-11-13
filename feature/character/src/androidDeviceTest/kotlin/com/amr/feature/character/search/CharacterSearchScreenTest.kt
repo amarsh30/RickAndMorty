@@ -22,6 +22,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.component.INFO_BANNER_TAG
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import com.amr.core.designsystem.component.STATUS_CHIP_TAG
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsFocused
@@ -58,6 +62,52 @@ class CharacterSearchScreenTest {
 
         onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
         onNodeWithText("Tidak ada karakter yang cocok.").assertDoesNotExist()
+    }
+
+    // --- Search semantics (6C.2A) ---
+
+    @Test
+    fun remoteSearchProgress_isLabelled() = runComposeUiTest {
+        setContent {
+            Content(CharacterSearchUiState(filter = CharacterFilter(name = "Rick"), isSearchingRemote = true))
+        }
+
+        onNodeWithContentDescription(SEARCHING_LABEL)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate))
+    }
+
+    @Test
+    fun resultCount_isAPoliteLiveRegion_thatFollowsTheResults() = runComposeUiTest {
+        var state by mutableStateOf(
+            CharacterSearchUiState(filter = CharacterFilter(name = "S"), results = listOf(rick, morty))
+        )
+        setContent { Content(state) }
+
+        onNodeWithTag(SEARCH_RESULT_COUNT_TAG)
+            .assert(hasText(searchResultCountText(2)))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+
+        state = state.copy(results = listOf(rick))
+        onNodeWithTag(SEARCH_RESULT_COUNT_TAG).assert(hasText(searchResultCountText(1)))
+    }
+
+    @Test
+    fun resultCount_isNotShownWithoutAQueryOrWithoutResults() = runComposeUiTest {
+        var state by mutableStateOf(CharacterSearchUiState())
+        setContent { Content(state) }
+        onNodeWithTag(SEARCH_RESULT_COUNT_TAG).assertDoesNotExist()
+
+        state = CharacterSearchUiState(filter = CharacterFilter(name = "Zzz"))
+        onNodeWithTag(SEARCH_RESULT_COUNT_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun noResults_isOneMergedPoliteLiveRegion() = runComposeUiTest {
+        setContent { Content(CharacterSearchUiState(filter = CharacterFilter(name = "Zzz"))) }
+
+        onNodeWithTag(NO_RESULTS_TAG)
+            .assert(hasText("Tidak ada karakter yang cocok.") and hasText("Coba ubah atau hapus sebagian filter."))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
     }
 
     @Test

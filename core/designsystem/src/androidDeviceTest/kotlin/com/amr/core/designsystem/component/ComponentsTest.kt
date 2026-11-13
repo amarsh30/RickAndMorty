@@ -6,6 +6,10 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -118,6 +122,63 @@ class ComponentsTest {
         node.assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Memuat")))
         // Placeholder rows are cleared from semantics: no children are exposed.
         assertEquals(0, node.fetchSemanticsNode().children.size)
+    }
+
+    @Test
+    fun appLoading_isOneLabelledIndeterminateProgressNode() = runComposeUiTest {
+        setContent { AppTheme { AppLoading() } }
+
+        onNodeWithContentDescription(LOADING_LABEL)
+            .assertIsDisplayed()
+            .assert(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
+        onAllNodes(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertCountEquals(1)
+    }
+
+    @Test
+    fun loadMoreFooter_spinnerIsLabelled_errorIsPoliteLiveRegion_retryIsAButton() = runComposeUiTest {
+        var loading by mutableStateOf(true)
+        var retries = 0
+        setContent {
+            AppTheme {
+                LoadMoreFooter(
+                    isLoadingMore = loading,
+                    loadMoreErrorMessage = "Timeout",
+                    isEndReached = false,
+                    endReachedText = null,
+                    loadMoreIndicatorTag = "footer",
+                    onLoadMore = { retries++ }
+                )
+            }
+        }
+
+        onNodeWithTag("footer")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf(LOAD_MORE_LOADING_LABEL)))
+
+        loading = false
+        onNodeWithText("Timeout")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        onNodeWithText(LOAD_MORE_RETRY_LABEL).performClick()
+        assertEquals(1, retries)
+    }
+
+    @Test
+    fun loadMoreFooter_endOfList_isPlainTextWithoutLiveRegion() = runComposeUiTest {
+        setContent {
+            AppTheme {
+                LoadMoreFooter(
+                    isLoadingMore = false,
+                    loadMoreErrorMessage = null,
+                    isEndReached = true,
+                    endReachedText = "Semua sudah ditampilkan",
+                    loadMoreIndicatorTag = "footer",
+                    onLoadMore = {}
+                )
+            }
+        }
+
+        onNodeWithText("Semua sudah ditampilkan")
+            .assertIsDisplayed()
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
     }
 
     @Test

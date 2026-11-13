@@ -18,6 +18,7 @@ import com.amr.feature.character.component.CharacterGrid
 import org.koin.compose.viewmodel.koinViewModel
 
 internal const val EXPLORE_CHARACTERS_LABEL = "Jelajahi karakter"
+internal const val BACK_TO_CHARACTERS_LABEL = "Kembali ke daftar karakter"
 
 @Composable
 fun FavoritesScreen(
@@ -50,9 +51,12 @@ internal fun FavoritesContent(
         when {
             state.isLoading -> SkeletonList(avatarSize = 80.dp, modifier = contentModifier)
 
+            // Favorites come from a local Room flow with no retry operation, so the button is
+            // labelled for what it really does: going back to the character list.
             state.errorMessage != null -> AppError(
                 message = state.errorMessage,
                 onRetry = onBack,
+                retryText = BACK_TO_CHARACTERS_LABEL,
                 modifier = contentModifier
             )
 

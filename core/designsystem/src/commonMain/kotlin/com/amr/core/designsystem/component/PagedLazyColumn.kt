@@ -25,11 +25,17 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
 const val PAGED_LIST_LOAD_MORE_INDICATOR_TAG = "paged_list_load_more_indicator"
+const val LOAD_MORE_LOADING_LABEL = "Memuat data berikutnya"
+const val LOAD_MORE_RETRY_LABEL = "Muat Lagi"
 
 /** Load the next page when the last visible item is within this many items of the end. */
 internal const val LOAD_MORE_THRESHOLD = 5
@@ -126,22 +132,26 @@ internal fun LoadMoreFooter(
                     modifier = Modifier
                         .size(32.dp)
                         .testTag(loadMoreIndicatorTag)
+                        .semantics { contentDescription = LOAD_MORE_LOADING_LABEL }
                 )
             }
 
             loadMoreErrorMessage != null -> {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // Polite: the failure happens off-screen from the user's focus, at the list end.
                     Text(
                         text = loadMoreErrorMessage,
                         color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     )
                     TextButton(onClick = onLoadMore) {
-                        Text("Muat Lagi")
+                        Text(LOAD_MORE_RETRY_LABEL)
                     }
                 }
             }
 
+            // Not a live region: reaching the end is expected and is read when the user gets there.
             isEndReached && endReachedText != null -> {
                 Text(
                     text = endReachedText,
