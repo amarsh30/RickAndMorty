@@ -270,6 +270,30 @@ class DatabaseLocationMigrationTest {
     }
 
     @Test
+    fun migratedTarget_staysAuthoritative_evenWhenItsDirectoryCannotBeCreated() {
+        val fs = FakeFs().apply { files[target] = "current"; files[legacy] = "old"; failEnsureDir = true }
+
+        assertEquals(target, fs.resolve())
+        assertEquals("current", fs.files[target])
+    }
+
+    /**
+     * Contract relied on by the iOS builder: with no usable target and no legacy database the
+     * returned legacy path does not exist, so the builder refuses it instead of letting Room
+     * create an empty database there. Nothing is created or deleted.
+     */
+    @Test
+    fun targetDirectoryUnavailable_withoutLegacy_returnsAbsentLegacyPath_andTouchesNothing() {
+        val fs = FakeFs().apply { failEnsureDir = true }
+
+        val path = fs.resolve()
+
+        assertEquals(legacy, path)
+        assertFalse(fs.exists(path), "caller must refuse a path with no database")
+        assertTrue(fs.files.isEmpty())
+    }
+
+    @Test
     fun targetDirectoryUnavailable_keepsUsingLegacy() {
         val fs = legacyWithFavorites().apply { failEnsureDir = true }
         val before = fs.files.toMap()

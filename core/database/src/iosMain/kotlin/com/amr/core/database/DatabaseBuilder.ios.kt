@@ -6,6 +6,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSHomeDirectory
 import platform.Foundation.NSSearchPathDirectory
 import platform.Foundation.NSUserDomainMask
 import platform.posix.F_FULLFSYNC
@@ -21,22 +22,32 @@ private const val DATABASE_FILE_NAME = "rick_and_morty.db"
  * The database lives in Application Support (app-private, not shown in the Files app).
  * Earlier builds kept it in Documents; it is moved over once, before Room opens it,
  * and kept in Documents if the move cannot complete safely.
+ *
+ * Both directories always resolve to their real paths, even when the system lookup fails,
+ * so an already migrated database is always found. A new database is only ever created in
+ * Application Support: if the only usable path is a Documents file that does not exist,
+ * initialization fails instead of silently starting an empty database there.
  */
 @OptIn(ExperimentalForeignApi::class)
 fun createDatabaseBuilder(): RoomDatabase.Builder<CharacterDatabase> {
     val legacyDir = directoryPath(NSDocumentDirectory, create = false)
+        ?: "${NSHomeDirectory()}/Documents"
     val targetDir = directoryPath(NSApplicationSupportDirectory, create = true)
+        ?: directoryPath(NSApplicationSupportDirectory, create = false)
+        ?: "${NSHomeDirectory()}/Library/Application Support"
+    val targetPath = "$targetDir/$DATABASE_FILE_NAME"
 
-    val databasePath = when {
-        targetDir == null -> "${legacyDir ?: error("Cannot find a database directory")}/$DATABASE_FILE_NAME"
-        legacyDir == null -> "$targetDir/$DATABASE_FILE_NAME"
-        else -> resolveDatabasePath(
-            legacyDir = legacyDir,
-            targetDir = targetDir,
-            fileName = DATABASE_FILE_NAME,
-            ops = NsFileManagerOps,
-            validator = SqliteDatabaseValidator
-        )
+    val databasePath = resolveDatabasePath(
+        legacyDir = legacyDir,
+        targetDir = targetDir,
+        fileName = DATABASE_FILE_NAME,
+        ops = NsFileManagerOps,
+        validator = SqliteDatabaseValidator
+    )
+
+    check(databasePath == targetPath || NsFileManagerOps.exists(databasePath)) {
+        "Database directory is unavailable: cannot create $targetDir and no existing " +
+            "database was found. Refusing to start an empty database at $databasePath."
     }
 
     return Room.databaseBuilder<CharacterDatabase>(
