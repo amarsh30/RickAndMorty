@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertLeftPositionInRootIsEqualTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -314,14 +315,29 @@ class CharacterListDetailTest {
     }
 
     @Test
-    fun detailPane_hasAPaneTitle_soSelectionChangesAreAnnounced() = runComposeUiTest {
+    fun detailPane_titleNamesTheSelectedCharacter_andChangesWithTheSelection() = runComposeUiTest {
         size(1000.dp, 800.dp)
         setContent { Screen() }
 
         onNodeWithText("Rick Sanchez").performClick()
-
         onNodeWithTag(CHARACTER_DETAIL_PANE_TAG)
-            .assert(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, CHARACTER_DETAIL_PANE_TITLE))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, characterDetailPaneTitle("Rick Sanchez")))
+
+        // A new selection gives a new title (announced once); selection and in-place detail are kept.
+        onNodeWithText("Morty Smith").performClick()
+        onNodeWithTag(CHARACTER_DETAIL_PANE_TAG)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, characterDetailPaneTitle("Morty Smith")))
+        onNode(hasClickAction() and hasText("Morty Smith")).assertIsSelected()
+        onNodeWithText("Detail 2").assertExists()
+        // Exactly one pane title on screen: the list itself is not a pane.
+        onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.PaneTitle)).assertCountEquals(1)
+    }
+
+    @Test
+    fun detailPaneTitle_fallsBackToGenericTitle_whenTheNameIsUnknown() {
+        assertEquals(CHARACTER_DETAIL_PANE_TITLE, characterDetailPaneTitle(null))
+        assertEquals(CHARACTER_DETAIL_PANE_TITLE, characterDetailPaneTitle(" "))
+        assertEquals("$CHARACTER_DETAIL_PANE_TITLE: Rick Sanchez", characterDetailPaneTitle("Rick Sanchez"))
     }
 
     @Test

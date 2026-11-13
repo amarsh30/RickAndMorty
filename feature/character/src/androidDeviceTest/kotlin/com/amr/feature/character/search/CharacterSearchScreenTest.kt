@@ -23,6 +23,18 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import com.amr.core.designsystem.component.INFO_BANNER_TAG
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.material3.MaterialTheme
+import com.amr.core.designsystem.theme.AppTheme
+import kotlin.test.assertNotEquals
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -212,10 +224,11 @@ class CharacterSearchScreenTest {
         setContent { Content(CharacterSearchUiState(filter = filter), onFilterChange = { filter = it }) }
 
         onNodeWithTag(ACTIVE_FILTERS_TAG).assertIsDisplayed()
-        onNodeWithText("Status: Dead").assertIsDisplayed()
-        onNodeWithText("Gender: Male").assertIsDisplayed()
+        // Each active filter is one button named by the filter it removes.
+        onNodeWithContentDescription(removeFilterLabel("Status: Dead")).assertIsDisplayed()
+        onNodeWithContentDescription(removeFilterLabel("Gender: Male")).assertIsDisplayed()
 
-        onNodeWithText("Gender: Male").performClick()
+        onNodeWithContentDescription(removeFilterLabel("Gender: Male")).performClick()
         assertEquals(null, filter.gender)
         assertEquals(CharacterFilter.Status.DEAD, filter.status)
         assertEquals("Rick", filter.name)
@@ -223,6 +236,74 @@ class CharacterSearchScreenTest {
         onNodeWithText(CLEAR_ALL_FILTERS_LABEL).performClick()
         assertEquals(CharacterFilter(), filter)
         onNodeWithTag(ACTIVE_FILTERS_TAG).assertDoesNotExist()
+    }
+
+    // --- Filter semantics and focus (6C.2B) ---
+
+    @Test
+    fun filterChips_namedWithTheirGroup_inSelectableGroups_withSelectedAndUnselectedStates() = runComposeUiTest {
+        var filter by mutableStateOf(CharacterFilter(status = CharacterFilter.Status.DEAD))
+        setContent { Content(CharacterSearchUiState(filter = filter), onFilterChange = { filter = it }) }
+
+        onNodeWithContentDescription(filterChipName(STATUS_GROUP_LABEL, "Dead")).assertIsSelected()
+        onNodeWithContentDescription(filterChipName(STATUS_GROUP_LABEL, "Alive")).assertIsNotSelected()
+        onNodeWithContentDescription(filterChipName(GENDER_GROUP_LABEL, "Male")).assertIsNotSelected()
+        // Each chip row is a selectable group (one choice per group).
+        onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.SelectableGroup)).assertCountEquals(2)
+
+        // Behaviour unchanged: choosing another option replaces the choice.
+        onNodeWithContentDescription(filterChipName(STATUS_GROUP_LABEL, "Alive")).performClick()
+        assertEquals(CharacterFilter.Status.ALIVE, filter.status)
+    }
+
+    @Test
+    fun activeFilterChip_isARemoveButton_notASelectedItem() = runComposeUiTest {
+        var filter by mutableStateOf(CharacterFilter(name = "Rick"))
+        setContent { Content(CharacterSearchUiState(filter = filter), onFilterChange = { filter = it }) }
+
+        onNodeWithContentDescription(removeFilterLabel("Nama: Rick"))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Selected))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertEquals("", filter.name)
+        onNodeWithTag(ACTIVE_FILTERS_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun activeFilterChip_andClearAll_showFocusRingOnlyWithKeyboardFocus() = runComposeUiTest {
+        var primary = Color.Unspecified
+        lateinit var inputMode: InputModeManager
+        setContent {
+            inputMode = LocalInputModeManager.current
+            AppTheme {
+                primary = MaterialTheme.colorScheme.primary
+                Content(CharacterSearchUiState(filter = CharacterFilter(name = "Rick", status = CharacterFilter.Status.DEAD)))
+            }
+        }
+        fun SemanticsNodeInteraction.edgePixel(): Color {
+            val map = captureToImage().toPixelMap()
+            return map[1, map.height / 2]
+        }
+        val chip = onNodeWithContentDescription(removeFilterLabel("Nama: Rick"))
+        val clearAll = onNodeWithText(CLEAR_ALL_FILTERS_LABEL)
+
+        // Touch mode: no ring.
+        assertNotEquals(primary, chip.edgePixel())
+        assertNotEquals(primary, clearAll.edgePixel())
+
+        // Keyboard mode (in touch mode Compose clickables are not focusable).
+        runOnIdle { inputMode.requestInputMode(InputMode.Keyboard) }
+        chip.requestFocus()
+        waitForIdle()
+        assertEquals(primary, chip.edgePixel(), "active-filter chip ring while focused")
+
+        clearAll.requestFocus()
+        waitForIdle()
+        assertEquals(primary, clearAll.edgePixel(), "clear-all ring while focused")
+        assertNotEquals(primary, chip.edgePixel(), "ring follows focus")
+        clearAll.assertHeightIsAtLeast(48.dp)
     }
 
     @Test

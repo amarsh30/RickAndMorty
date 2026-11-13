@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -145,7 +146,7 @@ internal fun LoadMoreFooter(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                     )
-                    TextButton(onClick = onLoadMore) {
+                    TextButton(onClick = onLoadMore, modifier = Modifier.focusRing(ButtonDefaults.textShape)) {
                         Text(LOAD_MORE_RETRY_LABEL)
                     }
                 }

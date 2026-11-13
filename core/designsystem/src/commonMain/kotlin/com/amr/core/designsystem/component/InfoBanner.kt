@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -72,7 +73,10 @@ fun InfoBanner(
                 modifier = Modifier.weight(1f)
             )
             if (actionText != null && onAction != null) {
-                TextButton(onClick = onAction, modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(
+                    onClick = onAction,
+                    modifier = Modifier.heightIn(min = 48.dp).focusRing(ButtonDefaults.textShape)
+                ) {
                     Text(text = actionText)
                 }
             }

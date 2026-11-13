@@ -202,10 +202,11 @@ class AppShellTest {
     fun connectivityBanner_staysVisibleAboveContentOnEveryTab() = runComposeUiTest {
         setContent { TestApp(connectivity = AppConnectivity.Offline) }
 
-        onNodeWithTag(CONNECTIVITY_BANNER_TAG).assertIsDisplayed()
+        // The banner text is merged into its live region, so it is found in the unmerged tree.
+        onNodeWithTag(CONNECTIVITY_BANNER_TAG, useUnmergedTree = true).assertIsDisplayed()
         onNodeWithText("Buka Cari").assertIsDisplayed()
         onNodeWithTag(TopLevelTab.LOCATIONS.testTag()).performClick()
-        onNodeWithTag(CONNECTIVITY_BANNER_TAG).assertIsDisplayed()
+        onNodeWithTag(CONNECTIVITY_BANNER_TAG, useUnmergedTree = true).assertIsDisplayed()
         onNodeWithText("Layar Lokasi").assertIsDisplayed()
     }
 }

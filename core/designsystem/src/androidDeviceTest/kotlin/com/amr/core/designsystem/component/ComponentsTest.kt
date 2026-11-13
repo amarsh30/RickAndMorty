@@ -6,6 +6,9 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.onRoot
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -240,6 +243,73 @@ class ComponentsTest {
         assertEquals(primary, edgePixel(), "ring drawn in primary while focused")
         // Touch target unchanged.
         node.assertHeightIsAtLeast(48.dp)
+    }
+
+    // --- Label/value rows and focus rings (6C.2B) ---
+
+    @Test
+    fun infoCardRow_andDetailRow_areEachOneScreenReaderItem() = runComposeUiTest {
+        setContent {
+            AppTheme {
+                androidx.compose.foundation.layout.Column {
+                    InfoCard(rows = listOf(InfoCardRow("Spesies", "Human"), InfoCardRow("Gender", "Male")))
+                    AppDetailRow(label = "Dimensi", value = "C-137")
+                }
+            }
+        }
+
+        // Label and value are one node each row, and rows stay separate from each other.
+        onAllNodes(hasText("Spesies") and hasText("Human")).assertCountEquals(1)
+        onAllNodes(hasText("Spesies") and hasText("Male")).assertCountEquals(0)
+        onAllNodes(hasText("Gender") and hasText("Male")).assertCountEquals(1)
+        onAllNodes(hasText("Dimensi") and hasText("C-137")).assertCountEquals(1)
+        // Not turned into buttons.
+        onNode(hasText("Spesies") and hasText("Human")).assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnClick))
+    }
+
+    @Test
+    fun actionsInSharedComponents_showFocusRingOnlyWithKeyboardFocus() = runComposeUiTest {
+        var primary = Color.Unspecified
+        lateinit var inputMode: InputModeManager
+        setContent {
+            inputMode = LocalInputModeManager.current
+            AppTheme {
+                primary = MaterialTheme.colorScheme.primary
+                androidx.compose.foundation.layout.Column {
+                    InfoBanner(message = "Offline", actionText = "Coba Lagi", onAction = {})
+                    AppMessage(icon = AppIcons.Info, title = "Kosong", actionText = "Muat", onAction = {})
+                    LoadMoreFooter(
+                        isLoadingMore = false, loadMoreErrorMessage = "Timeout", isEndReached = false,
+                        endReachedText = null, loadMoreIndicatorTag = "footer", onLoadMore = {}
+                    )
+                    AppListCard(title = "Earth", subtitle = "Planet", onClick = {})
+                }
+            }
+        }
+        fun edgePixel(text: String): Color {
+            val node = onNode(hasText(text) and hasClickAction())
+            if (text != "Muat") {
+                val map = node.captureToImage().toPixelMap()
+                return map[1, map.height / 2]
+            }
+            // The filled AppMessage button draws its ring just outside its own bounds
+            // (a ring on the primary fill would be invisible), so sample beside the button.
+            val bounds = node.fetchSemanticsNode().boundsInRoot
+            val root = onRoot().captureToImage().toPixelMap()
+            return root[(bounds.left - 2).toInt(), bounds.center.y.toInt()]
+        }
+        val actions = listOf("Coba Lagi", "Muat", LOAD_MORE_RETRY_LABEL, "Earth")
+
+        actions.forEach { assertNotEquals(primary, edgePixel(it), "no ring on $it before keyboard focus") }
+
+        runOnIdle { inputMode.requestInputMode(InputMode.Keyboard) }
+        actions.forEach { text ->
+            onNode(hasText(text) and hasClickAction()).requestFocus()
+            waitForIdle()
+            assertEquals(primary, edgePixel(text), "ring on $text while focused")
+        }
+        onNode(hasText("Coba Lagi") and hasClickAction()).assertHeightIsAtLeast(48.dp)
+        onNode(hasText("Muat") and hasClickAction()).assertHeightIsAtLeast(48.dp)
     }
 
     @Test

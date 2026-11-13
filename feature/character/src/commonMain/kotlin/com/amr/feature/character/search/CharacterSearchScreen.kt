@@ -7,7 +7,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.requestFocus
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -19,11 +28,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -65,6 +76,14 @@ internal const val CLEAR_ALL_FILTERS_LABEL = "Hapus semua filter"
 internal const val SEARCHING_LABEL = "Mencari"
 internal const val SEARCH_RESULT_COUNT_TAG = "search_result_count"
 internal const val NO_RESULTS_TAG = "search_no_results"
+internal const val STATUS_GROUP_LABEL = "Status"
+internal const val GENDER_GROUP_LABEL = "Gender"
+
+/** Spoken name of a filter chip: its group plus the visible label, e.g. "Status: Dead". */
+internal fun filterChipName(group: String, option: String) = "$group: $option"
+
+/** Spoken name of an active-filter chip, which removes that filter. */
+internal fun removeFilterLabel(filterText: String) = "Hapus filter $filterText"
 
 internal fun searchResultCountText(count: Int) = "$count karakter ditemukan"
 
@@ -137,12 +156,14 @@ internal fun CharacterSearchContent(
             ChipRow(
                 options = CharacterFilter.Status.entries,
                 selected = filter.status,
+                groupLabel = STATUS_GROUP_LABEL,
                 label = { it.label },
                 onSelect = { onFilterChange(filter.copy(status = it)) }
             )
             ChipRow(
                 options = CharacterFilter.Gender.entries,
                 selected = filter.gender,
+                groupLabel = GENDER_GROUP_LABEL,
                 label = { it.label },
                 onSelect = { onFilterChange(filter.copy(gender = it)) }
             )
@@ -241,11 +262,16 @@ private fun SearchField(
     )
 }
 
-/** Single-choice chips; tapping the selected chip clears the choice. */
+/**
+ * Single-choice chips; tapping the selected chip clears the choice. The row is a
+ * selectable group, and each chip's spoken name includes [groupLabel] ("Status: Dead"),
+ * so the choice has context without adding an extra screen-reader stop.
+ */
 @Composable
 private fun <T> ChipRow(
     options: List<T>,
     selected: T?,
+    groupLabel: String,
     label: (T) -> String,
     onSelect: (T?) -> Unit
 ) {
@@ -253,7 +279,10 @@ private fun <T> ChipRow(
     val scrollState = rememberScrollState()
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.horizontalScroll(scrollState).padding(horizontal = spacing.lg),
+            modifier = Modifier
+                .selectableGroup()
+                .horizontalScroll(scrollState)
+                .padding(horizontal = spacing.lg),
             horizontalArrangement = Arrangement.spacedBy(spacing.sm)
         ) {
             options.forEach { option ->
@@ -267,7 +296,9 @@ private fun <T> ChipRow(
                     } else {
                         null
                     },
-                    modifier = Modifier.focusRing(FilterChipDefaults.shape)
+                    modifier = Modifier
+                        .focusRing(FilterChipDefaults.shape)
+                        .semantics { contentDescription = filterChipName(groupLabel, label(option)) }
                 )
             }
         }
@@ -322,23 +353,35 @@ private fun ActiveFilters(filter: CharacterFilter, onFilterChange: (CharacterFil
         horizontalArrangement = Arrangement.spacedBy(spacing.sm),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        active.forEach { (text, without) ->
+        active.forEach { (text, without) -> key(text.substringBefore(':')) {
+            val remove = { onFilterChange(without) }
+            // clearAndSetSemantics drops the chip's own actions, so focus is re-exposed explicitly.
+            val focusRequester = remember { FocusRequester() }
             InputChip(
+                // Visual style only: an active filter is not a "selected" item, so its semantics
+                // are replaced by one button that names the filter it removes.
                 selected = true,
-                onClick = { onFilterChange(without) },
+                onClick = remove,
                 label = { Text(text) },
                 trailingIcon = {
-                    Icon(
-                        AppIcons.Close,
-                        // Names the filter, so each remove action is distinguishable to screen readers.
-                        contentDescription = "Hapus filter $text",
-                        modifier = Modifier.size(InputChipDefaults.IconSize)
-                    )
-                }
+                    Icon(AppIcons.Close, contentDescription = null, modifier = Modifier.size(InputChipDefaults.IconSize))
+                },
+                modifier = Modifier
+                    .focusRequester(focusRequester)
+                    .focusRing(InputChipDefaults.shape)
+                    .clearAndSetSemantics {
+                        contentDescription = removeFilterLabel(text)
+                        role = Role.Button
+                        onClick { remove(); true }
+                        requestFocus { focusRequester.requestFocus(); true }
+                    }
             )
-        }
+        } }
         if (active.size > 1) {
-            TextButton(onClick = { onFilterChange(CharacterFilter()) }) {
+            TextButton(
+                onClick = { onFilterChange(CharacterFilter()) },
+                modifier = Modifier.heightIn(min = 48.dp).focusRing(ButtonDefaults.textShape)
+            ) {
                 Text(CLEAR_ALL_FILTERS_LABEL, style = MaterialTheme.typography.labelLarge)
             }
         }

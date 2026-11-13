@@ -24,6 +24,11 @@ import com.amr.feature.character.detail.CharacterDetailContent
 import com.amr.feature.character.detail.CharacterDetailUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.graphics.toPixelMap
 
 /** UI test for [FavoritesContent] and the favorite toggle on [CharacterDetailContent]. */
 @OptIn(ExperimentalTestApi::class)
@@ -129,6 +134,44 @@ class FavoritesScreenTest {
         state = state.copy(favorites = emptyList())
         onNodeWithText("Rick Sanchez").assertDoesNotExist()
         onNodeWithText("Belum ada karakter favorit").assertIsDisplayed()
+    }
+
+    // --- Detail semantics and focus (6C.2B) ---
+
+    @Test
+    fun detail_labelValueRowsAndPlainLocation_areOneItemEach_tappableLocationShowsFocusRing() = runComposeUiTest {
+        var primary = androidx.compose.ui.graphics.Color.Unspecified
+        lateinit var inputMode: androidx.compose.ui.input.InputModeManager
+        val full = rick.copy(gender = "Male", originName = "Earth (C-137)", originId = 1, locationName = "Citadel of Ricks", locationId = null)
+        setContent {
+            inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
+            com.amr.core.designsystem.theme.AppTheme {
+                primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                CharacterDetailContent(
+                    state = CharacterDetailUiState(isLoading = false, character = full),
+                    onBack = {}, onRetry = {}, onToggleFavorite = {}
+                )
+            }
+        }
+
+        // "Spesies, Human" is one item; the non-clickable location reads label and name together.
+        onAllNodes(hasText("Spesies") and hasText("Human")).assertCountEquals(1)
+        onAllNodes(hasText("Gender") and hasText("Male")).assertCountEquals(1)
+        onNode(hasText("Lokasi terakhir") and hasText("Citadel of Ricks"))
+            .assertExists()
+            .assert(SemanticsMatcher.keyNotDefined(androidx.compose.ui.semantics.SemanticsActions.OnClick))
+
+        val origin = onNode(hasClickAction() and hasText("Earth (C-137)")).performScrollTo()
+        fun edgePixel(): androidx.compose.ui.graphics.Color {
+            val map = origin.captureToImage().toPixelMap()
+            return map[1, map.height / 2]
+        }
+        assertNotEquals(primary, edgePixel(), "no ring in touch mode")
+        runOnIdle { inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard) }
+        origin.requestFocus()
+        waitForIdle()
+        assertEquals(primary, edgePixel(), "ring while the tappable location has keyboard focus")
+        origin.assertHeightIsAtLeast(48.dp)
     }
 
     @Test

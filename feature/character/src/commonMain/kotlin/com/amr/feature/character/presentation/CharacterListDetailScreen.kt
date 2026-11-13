@@ -10,6 +10,8 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Modifier
@@ -28,6 +30,13 @@ internal const val CHARACTER_DETAIL_PANE_TAG = "character_detail_pane"
 internal const val CHARACTER_DETAIL_PLACEHOLDER_TAG = "character_detail_placeholder"
 private const val DETAIL_PANE_STORE_KEY = "character-detail-pane-store"
 internal const val CHARACTER_DETAIL_PANE_TITLE = "Detail karakter"
+
+/**
+ * Pane title for the shown detail. It names the character when the list knows it, so the
+ * title changes on every new selection and screen readers announce which detail opened.
+ */
+internal fun characterDetailPaneTitle(name: String?) =
+    if (name.isNullOrBlank()) CHARACTER_DETAIL_PANE_TITLE else "$CHARACTER_DETAIL_PANE_TITLE: $name"
 
 /**
  * Character list with an adaptive detail, for the list destination.
@@ -57,6 +66,7 @@ fun CharacterListDetailScreen(
 ) {
     // Outlives the list composable, which is swapped out while a single-pane detail shows.
     val gridState = rememberLazyGridState()
+    val listState by listViewModel.uiState.collectAsStateWithLifecycle()
 
     // One ViewModelStore for the shown detail only (see DetailPaneStoreHolder): the same
     // character keeps its ViewModel across rotation/resize; a new one replaces the old.
@@ -87,14 +97,16 @@ fun CharacterListDetailScreen(
                 )
                 VerticalDivider()
                 if (current != null) {
-                    // A pane title makes screen readers announce the detail pane when the selection
-                    // changes, instead of the right side updating silently.
+                    // A pane title that names the character makes screen readers announce each new
+                    // selection once, instead of the right side updating silently. Focus is left on
+                    // the list on purpose, so browsing and comparing characters stays uninterrupted.
+                    val paneTitleText = characterDetailPaneTitle(listState.characters.firstOrNull { it.id == current }?.name)
                     BoxWithConstraints(
                         Modifier
                             .weight(1f)
                             .fillMaxHeight()
                             .testTag(CHARACTER_DETAIL_PANE_TAG)
-                            .semantics { paneTitle = CHARACTER_DETAIL_PANE_TITLE }
+                            .semantics { paneTitle = paneTitleText }
                     ) {
                         paneDetail(current, null)
                     }

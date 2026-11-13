@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /** A clickable card with a title and an optional secondary line. */
@@ -21,7 +23,7 @@ fun AppListCard(
     modifier: Modifier = Modifier,
     overline: String? = null
 ) {
-    Card(onClick = onClick, modifier = modifier.fillMaxWidth()) {
+    Card(onClick = onClick, modifier = modifier.fillMaxWidth().focusRing(CardDefaults.shape)) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -45,11 +47,11 @@ fun AppListCard(
     }
 }
 
-/** A label/value line for detail screens. */
+/** A label/value line for detail screens, read by screen readers as one item. */
 @Composable
 fun AppDetailRow(label: String, value: String?, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium)

@@ -11,6 +11,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import com.amr.core.designsystem.theme.AppThemeTokens
@@ -33,7 +34,11 @@ fun InfoCard(rows: List<InfoCardRow>, modifier: Modifier = Modifier) {
             rows.forEach { row ->
                 val valueStyle: TextStyle =
                     if (row.monospace) AppThemeTokens.mono else MaterialTheme.typography.bodyMedium
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                // One screen-reader stop per row ("Spesies, Human"), not two.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.md),
+                    modifier = Modifier.semantics(mergeDescendants = true) {}
+                ) {
                     Text(
                         text = row.label,
                         style = MaterialTheme.typography.bodyMedium,

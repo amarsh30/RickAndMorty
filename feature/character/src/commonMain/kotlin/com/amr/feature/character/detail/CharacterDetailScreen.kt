@@ -229,7 +229,11 @@ private fun InfoCard(content: @Composable () -> Unit) {
 
 @Composable
 private fun InfoRow(label: String, value: String?) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(AppThemeTokens.spacing.md)) {
+    // One screen-reader stop per row ("Spesies, Human"), not two.
+    Row(
+        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(AppThemeTokens.spacing.md)
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
@@ -256,11 +260,15 @@ private fun LocationCard(label: String, name: String?, locationId: Int?, onLocat
     if (locationId != null) {
         OutlinedCard(
             onClick = { onLocationClick(locationId) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).focusRing(CardDefaults.outlinedShape),
             colors = colors
         ) { content() }
     } else {
-        OutlinedCard(modifier = Modifier.fillMaxWidth(), colors = colors) { content() }
+        // Not clickable, so nothing merges it by default: read label and name as one item.
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+            colors = colors
+        ) { content() }
     }
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -71,7 +72,13 @@ fun AppMessage(
         if (actionText != null && onAction != null) {
             Button(
                 onClick = onAction,
-                modifier = Modifier.padding(top = spacing.sm).heightIn(min = 48.dp)
+                // The filled button is `primary`, so the primary focus ring is drawn just outside
+                // the fill (inset by its own width) to stay visible.
+                modifier = Modifier
+                    .padding(top = spacing.sm)
+                    .focusRing(ButtonDefaults.shape)
+                    .padding(FocusRingWidth)
+                    .heightIn(min = 48.dp)
             ) {
                 Text(text = actionText)
             }
