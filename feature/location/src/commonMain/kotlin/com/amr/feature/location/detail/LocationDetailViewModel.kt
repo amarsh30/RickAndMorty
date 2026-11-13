@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -65,20 +64,29 @@ class LocationDetailViewModel(
     val uiState: StateFlow<LocationDetailUiState> = _uiState.asStateFlow()
 
     private val windowSize = MutableStateFlow(RESIDENT_PAGE_SIZE)
+    /** Bumped by a retry after the resident-id query failed, to run that query again. */
+    private val idQueryAttempt = MutableStateFlow(0)
+    private var idQueryFailed = false
+
     /**
      * One collection of the resident-id query, shared by the resident observer, the
      * fetcher and the retry (null until the first ids arrive). Started with the
      * ViewModel, like the collectors that read it, and stopped with viewModelScope.
+     * A failed query ends only the current attempt, so a retry can start a new one.
      */
-    private val visibleIds = combine(observeResidentIds(locationId), windowSize) { ids, size ->
-        _uiState.update { it.copy(residentCount = ids.size, canShowMoreResidents = size < ids.size) }
-        ids.take(size)
-    }.distinctUntilChanged()
-        // Same database-error state as the resident observer shows.
-        .catch { exception ->
-            if (exception is CancellationException) throw exception
-            _uiState.update { it.copy(residentsErrorMessage = DATABASE_ERROR_MESSAGE) }
+    private val visibleIds = idQueryAttempt
+        .flatMapLatest {
+            combine(observeResidentIds(locationId), windowSize) { ids, size ->
+                _uiState.update { it.copy(residentCount = ids.size, canShowMoreResidents = size < ids.size) }
+                ids.take(size)
+            }.catch { exception ->
+                if (exception is CancellationException) throw exception
+                idQueryFailed = true
+                // Same database-error state as the resident observer shows.
+                _uiState.update { it.copy(residentsErrorMessage = DATABASE_ERROR_MESSAGE) }
+            }
         }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     /** Operations that last failed for a connectivity reason; retried once the network returns. */
@@ -180,8 +188,15 @@ class LocationDetailViewModel(
         if (state.isLoadingResidents) return
 
         if (state.residentsErrorMessage != null) {
-            viewModelScope.launch {
-                fetchResidents(visibleIds.filterNotNull().first())
+            if (idQueryFailed) {
+                // Run the id query again (one new subscription); the fetch follows its ids.
+                idQueryFailed = false
+                _uiState.update { it.copy(residentsErrorMessage = null) }
+                idQueryAttempt.update { it + 1 }
+            } else {
+                // Ids are known: retry the failed window right away, without waiting.
+                val ids = visibleIds.value ?: return
+                viewModelScope.launch { fetchResidents(ids) }
             }
         } else if (state.canShowMoreResidents) {
             windowSize.update { it + RESIDENT_PAGE_SIZE }

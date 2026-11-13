@@ -285,6 +285,51 @@ class EpisodeViewModelsTest {
         assertTrue(related.fetchCalls.isEmpty())
     }
 
+    // --- Retry after the character-id query fails (6C.3C) ---
+
+    @Test
+    fun detail_idQueryFailsBeforeFirstIds_retryRunsTheQueryAgain_andRestoresCharacters() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIds.value = mapOf(1 to listOf(1, 2))
+        episodes.characterIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.charactersErrorMessage)
+        assertEquals(1, episodes.characterIdSubscriptions)
+
+        episodes.characterIdsError = null
+        viewModel.loadMoreCharacters()
+        advanceUntilIdle()
+
+        // A new query attempt (not a wait on the dead one), and the normal flow resumes.
+        assertEquals(2, episodes.characterIdSubscriptions)
+        val state = viewModel.uiState.value
+        assertNull(state.charactersErrorMessage)
+        assertEquals(2, state.characterCount)
+        assertEquals(listOf(1, 2), state.characters.map { it.id })
+        assertEquals(listOf(listOf(1, 2)), related.fetchCalls)
+        assertEquals(1, episodes.characterIds.subscriptionCount.value)
+    }
+
+    @Test
+    fun detail_idQueryStillFailing_eachRetryIsOneBoundedAttempt_andRepeatedTapsDoNotPileUp() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        // Several taps before anything runs start a single new attempt.
+        repeat(5) { viewModel.loadMoreCharacters() }
+        advanceUntilIdle()
+        assertEquals(2, episodes.characterIdSubscriptions)
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.charactersErrorMessage)
+
+        // No retry loop: nothing more happens without another tap.
+        advanceUntilIdle()
+        assertEquals(2, episodes.characterIdSubscriptions)
+        assertTrue(related.fetchCalls.isEmpty())
+    }
+
     @Test
     fun detail_clearingTheViewModel_cancelsTheSharedCollection() = runTest(dispatcher) {
         episodes.details.value = mapOf(1 to pilot)

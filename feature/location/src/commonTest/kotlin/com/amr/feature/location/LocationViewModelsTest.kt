@@ -354,6 +354,51 @@ class LocationViewModelsTest {
         assertTrue(related.fetchCalls.isEmpty())
     }
 
+    // --- Retry after the resident-id query fails (6C.3C) ---
+
+    @Test
+    fun detail_idQueryFailsBeforeFirstIds_retryRunsTheQueryAgain_andRestoresResidents() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to listOf(1, 2))
+        locations.residentIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.residentsErrorMessage)
+        assertEquals(1, locations.residentIdSubscriptions)
+
+        locations.residentIdsError = null
+        viewModel.loadMoreResidents()
+        advanceUntilIdle()
+
+        // A new query attempt (not a wait on the dead one), and the normal flow resumes.
+        assertEquals(2, locations.residentIdSubscriptions)
+        val state = viewModel.uiState.value
+        assertNull(state.residentsErrorMessage)
+        assertEquals(2, state.residentCount)
+        assertEquals(listOf(1, 2), state.residents.map { it.id })
+        assertEquals(listOf(listOf(1, 2)), related.fetchCalls)
+        assertEquals(1, locations.residentIds.subscriptionCount.value)
+    }
+
+    @Test
+    fun detail_idQueryStillFailing_eachRetryIsOneBoundedAttempt_andRepeatedTapsDoNotPileUp() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        // Several taps before anything runs start a single new attempt.
+        repeat(5) { viewModel.loadMoreResidents() }
+        advanceUntilIdle()
+        assertEquals(2, locations.residentIdSubscriptions)
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.residentsErrorMessage)
+
+        // No retry loop: nothing more happens without another tap.
+        advanceUntilIdle()
+        assertEquals(2, locations.residentIdSubscriptions)
+        assertTrue(related.fetchCalls.isEmpty())
+    }
+
     @Test
     fun detail_clearingTheViewModel_cancelsTheSharedCollection() = runTest(dispatcher) {
         locations.details.value = mapOf(3 to citadel)

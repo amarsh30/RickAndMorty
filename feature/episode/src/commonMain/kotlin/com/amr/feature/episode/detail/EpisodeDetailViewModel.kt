@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -65,20 +64,29 @@ class EpisodeDetailViewModel(
     val uiState: StateFlow<EpisodeDetailUiState> = _uiState.asStateFlow()
 
     private val windowSize = MutableStateFlow(CHARACTER_PAGE_SIZE)
+    /** Bumped by a retry after the character-id query failed, to run that query again. */
+    private val idQueryAttempt = MutableStateFlow(0)
+    private var idQueryFailed = false
+
     /**
      * One collection of the character-id query, shared by the character observer, the
      * fetcher and the retry (null until the first ids arrive). Started with the
      * ViewModel, like the collectors that read it, and stopped with viewModelScope.
+     * A failed query ends only the current attempt, so a retry can start a new one.
      */
-    private val visibleIds = combine(observeCharacterIds(episodeId), windowSize) { ids, size ->
-        _uiState.update { it.copy(characterCount = ids.size, canShowMoreCharacters = size < ids.size) }
-        ids.take(size)
-    }.distinctUntilChanged()
-        // Same database-error state as the character observer shows.
-        .catch { exception ->
-            if (exception is CancellationException) throw exception
-            _uiState.update { it.copy(charactersErrorMessage = DATABASE_ERROR_MESSAGE) }
+    private val visibleIds = idQueryAttempt
+        .flatMapLatest {
+            combine(observeCharacterIds(episodeId), windowSize) { ids, size ->
+                _uiState.update { it.copy(characterCount = ids.size, canShowMoreCharacters = size < ids.size) }
+                ids.take(size)
+            }.catch { exception ->
+                if (exception is CancellationException) throw exception
+                idQueryFailed = true
+                // Same database-error state as the character observer shows.
+                _uiState.update { it.copy(charactersErrorMessage = DATABASE_ERROR_MESSAGE) }
+            }
         }
+        .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     /** Operations that last failed for a connectivity reason; retried once the network returns. */
@@ -180,7 +188,16 @@ class EpisodeDetailViewModel(
         if (state.isLoadingCharacters) return
 
         if (state.charactersErrorMessage != null) {
-            viewModelScope.launch { fetchCharacters(visibleIds.filterNotNull().first()) }
+            if (idQueryFailed) {
+                // Run the id query again (one new subscription); the fetch follows its ids.
+                idQueryFailed = false
+                _uiState.update { it.copy(charactersErrorMessage = null) }
+                idQueryAttempt.update { it + 1 }
+            } else {
+                // Ids are known: retry the failed window right away, without waiting.
+                val ids = visibleIds.value ?: return
+                viewModelScope.launch { fetchCharacters(ids) }
+            }
         } else if (state.canShowMoreCharacters) {
             windowSize.update { it + CHARACTER_PAGE_SIZE }
         }
