@@ -17,6 +17,9 @@ import com.amr.feature.location.presentation.toUserMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -62,10 +65,21 @@ class LocationDetailViewModel(
     val uiState: StateFlow<LocationDetailUiState> = _uiState.asStateFlow()
 
     private val windowSize = MutableStateFlow(RESIDENT_PAGE_SIZE)
+    /**
+     * One collection of the resident-id query, shared by the resident observer, the
+     * fetcher and the retry (null until the first ids arrive). Started with the
+     * ViewModel, like the collectors that read it, and stopped with viewModelScope.
+     */
     private val visibleIds = combine(observeResidentIds(locationId), windowSize) { ids, size ->
         _uiState.update { it.copy(residentCount = ids.size, canShowMoreResidents = size < ids.size) }
         ids.take(size)
     }.distinctUntilChanged()
+        // Same database-error state as the resident observer shows.
+        .catch { exception ->
+            if (exception is CancellationException) throw exception
+            _uiState.update { it.copy(residentsErrorMessage = DATABASE_ERROR_MESSAGE) }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     /** Operations that last failed for a connectivity reason; retried once the network returns. */
     private var refreshPending = false
@@ -108,6 +122,7 @@ class LocationDetailViewModel(
     private fun observeResidents() {
         viewModelScope.launch {
             visibleIds
+                .filterNotNull()
                 .flatMapLatest { ids -> observeRelatedCharacters(ids) }
                 .catch { exception ->
                     if (exception is CancellationException) throw exception
@@ -116,7 +131,7 @@ class LocationDetailViewModel(
                 .collect { residents -> _uiState.update { it.copy(residents = residents) } }
         }
         viewModelScope.launch {
-            visibleIds.collect { ids -> fetchResidents(ids) }
+            visibleIds.filterNotNull().collect { ids -> fetchResidents(ids) }
         }
     }
 
@@ -166,7 +181,7 @@ class LocationDetailViewModel(
 
         if (state.residentsErrorMessage != null) {
             viewModelScope.launch {
-                fetchResidents(visibleIds.first())
+                fetchResidents(visibleIds.filterNotNull().first())
             }
         } else if (state.canShowMoreResidents) {
             windowSize.update { it + RESIDENT_PAGE_SIZE }

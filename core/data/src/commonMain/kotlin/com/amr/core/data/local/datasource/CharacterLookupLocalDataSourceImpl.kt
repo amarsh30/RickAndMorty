@@ -4,6 +4,7 @@ import com.amr.core.data.mapper.toDomain
 import com.amr.core.data.mapper.toEntity
 import com.amr.core.data.mapper.toFavoriteEntity
 import com.amr.core.data.mapper.toSearchEntity
+import com.amr.core.database.DatabaseTransactionRunner
 import com.amr.core.database.dao.CharacterDao
 import com.amr.core.database.dao.FavoriteCharacterDao
 import com.amr.core.database.dao.SearchCharacterDao
@@ -22,6 +23,7 @@ class CharacterLookupLocalDataSourceImpl(
     private val characterDao: CharacterDao,
     private val searchCharacterDao: SearchCharacterDao,
     private val favoriteCharacterDao: FavoriteCharacterDao,
+    private val transactionRunner: DatabaseTransactionRunner,
     private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() }
 ) : CharacterLookupLocalDataSource {
 
@@ -52,10 +54,17 @@ class CharacterLookupLocalDataSourceImpl(
         searchCharacterDao.getCachedCharacterIds(ids).toSet()
 
     /**
-     * Each write is idempotent, so a partially applied save is corrected by the
-     * next fetch of the same characters.
+     * One transaction for the whole batch: the list, search and favorite tables are
+     * updated together (observers re-query once, after the commit, instead of after
+     * every row), and a failure rolls the batch back and is rethrown. Each write is
+     * still idempotent, so the next fetch of the same characters saves them again.
      */
     override suspend fun saveFetchedCharacters(characters: List<Character>) {
+        if (characters.isEmpty()) return
+        transactionRunner.runInTransaction { writeFetchedCharacters(characters) }
+    }
+
+    private suspend fun writeFetchedCharacters(characters: List<Character>) {
         val outsideList = characters.filter { character ->
             characterDao.updateCharacter(character.toEntity()) == 0
         }

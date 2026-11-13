@@ -18,6 +18,8 @@ import com.amr.feature.location.fake.FakeRelatedCharacterRepository
 import com.amr.feature.location.presentation.LocationListViewModel
 import com.amr.feature.location.presentation.STALE_DATA_MESSAGE
 import kotlinx.coroutines.CompletableDeferred
+import androidx.lifecycle.ViewModelStore
+import com.amr.feature.location.presentation.DATABASE_ERROR_MESSAGE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -293,6 +295,78 @@ class LocationViewModelsTest {
         assertEquals((1..RESIDENT_PAGE_SIZE).toList(), related.fetchCalls.single())
         assertEquals(RESIDENT_PAGE_SIZE, state.residents.size)
         assertTrue(state.canShowMoreResidents)
+    }
+
+    // --- One shared collection of the resident-id query (6C.3A) ---
+
+    @Test
+    fun detail_residentIdQuery_isCollectedOnce_acrossObserverFetcherRetryAndWindowGrowth() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to (1..50).toList())
+        related.fetchError = DataError.Timeout()
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        // Observer and fetcher share one subscription (was two, plus one per retry).
+        assertEquals(1, locations.residentIdSubscriptions)
+        assertEquals(1, locations.residentIds.subscriptionCount.value)
+        assertNotNull(viewModel.uiState.value.residentsErrorMessage)
+
+        related.fetchError = null
+        viewModel.loadMoreResidents() // retry the failed window
+        advanceUntilIdle()
+        viewModel.loadMoreResidents() // grow the window
+        advanceUntilIdle()
+
+        assertEquals(1, locations.residentIdSubscriptions)
+        assertEquals(listOf((1..20).toList(), (1..20).toList(), (1..40).toList()), related.fetchCalls)
+        assertEquals(40, viewModel.uiState.value.residents.size)
+        assertEquals(50, viewModel.uiState.value.residentCount)
+        assertTrue(viewModel.uiState.value.canShowMoreResidents)
+    }
+
+    @Test
+    fun detail_residentIdUpdates_stillReachStateAndFetch() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to listOf(1, 2))
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+        assertEquals(2, viewModel.uiState.value.residentCount)
+
+        locations.residentIds.value = mapOf(3 to listOf(1, 2, 3))
+        advanceUntilIdle()
+
+        assertEquals(3, viewModel.uiState.value.residentCount)
+        assertEquals(listOf(1, 2, 3), viewModel.uiState.value.residents.map { it.id })
+        assertEquals(listOf(1, 2, 3), related.fetchCalls.last())
+        assertEquals(1, locations.residentIdSubscriptions)
+    }
+
+    @Test
+    fun detail_residentIdQueryFailure_showsDatabaseError_andKeepsTheLocation() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.residentsErrorMessage)
+        assertEquals(citadel, viewModel.uiState.value.location)
+        assertTrue(related.fetchCalls.isEmpty())
+    }
+
+    @Test
+    fun detail_clearingTheViewModel_cancelsTheSharedCollection() = runTest(dispatcher) {
+        locations.details.value = mapOf(3 to citadel)
+        locations.residentIds.value = mapOf(3 to listOf(1))
+        val store = ViewModelStore()
+        store.put("detail", detailViewModel())
+        advanceUntilIdle()
+        assertEquals(1, locations.residentIds.subscriptionCount.value)
+
+        store.clear()
+        advanceUntilIdle()
+
+        assertEquals(0, locations.residentIds.subscriptionCount.value)
     }
 
     @Test

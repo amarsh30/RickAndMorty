@@ -37,7 +37,8 @@ class RelatedCharacterRepositoryTest {
         characterDao = FakeCharacterDao()
         searchDao = FakeSearchCharacterDao()
         val local = CharacterLookupLocalDataSourceImpl(
-            characterDao, searchDao, FakeFavoriteCharacterDao(), nowMillis = { 1L }
+            characterDao, searchDao, FakeFavoriteCharacterDao(),
+            transactionRunner = com.amr.core.data.fake.FakeTransactionRunner(), nowMillis = { 1L }
         )
         repository = RelatedCharacterRepositoryImpl(remote, local)
         (1..200).forEach { remote.characters[it] = testCharacterDto(it) }

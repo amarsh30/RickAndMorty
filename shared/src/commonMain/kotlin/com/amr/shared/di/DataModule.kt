@@ -53,7 +53,8 @@ val dataModule = module {
         CharacterLookupLocalDataSourceImpl(
             characterDao = get(),
             searchCharacterDao = get(),
-            favoriteCharacterDao = get()
+            favoriteCharacterDao = get(),
+            transactionRunner = get()
         )
     }
 

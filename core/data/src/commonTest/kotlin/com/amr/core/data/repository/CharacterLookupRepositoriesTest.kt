@@ -4,6 +4,8 @@ import com.amr.core.data.fake.FakeCharacterDao
 import com.amr.core.data.fake.FakeCharacterRemoteDataSource
 import com.amr.core.data.fake.FakeFavoriteCharacterDao
 import com.amr.core.data.fake.FakeSearchCharacterDao
+import com.amr.core.data.fake.FakeTransactionRunner
+import com.amr.core.database.dao.FavoriteCharacterDao
 import com.amr.core.data.fake.testCharacter
 import com.amr.core.data.fake.testCharacterDto
 import com.amr.core.data.fake.testSingleFlight
@@ -38,6 +40,7 @@ class CharacterLookupRepositoriesTest {
     private lateinit var search: CharacterSearchRepositoryImpl
     private lateinit var detail: CharacterDetailRepositoryImpl
     private lateinit var favorites: FavoriteRepositoryImpl
+    private lateinit var transactions: FakeTransactionRunner
 
     /** Fake clock read by the local data source when it saves fetched characters. */
     private var now = NOW
@@ -48,7 +51,10 @@ class CharacterLookupRepositoriesTest {
         characterDao = FakeCharacterDao()
         searchDao = FakeSearchCharacterDao()
         favoriteDao = FakeFavoriteCharacterDao()
-        local = CharacterLookupLocalDataSourceImpl(characterDao, searchDao, favoriteDao, nowMillis = { now })
+        transactions = FakeTransactionRunner()
+        local = CharacterLookupLocalDataSourceImpl(
+            characterDao, searchDao, favoriteDao, transactionRunner = transactions, nowMillis = { now }
+        )
         search = CharacterSearchRepositoryImpl(remote, local)
         detail = CharacterDetailRepositoryImpl(remote, local, testSingleFlight())
         favorites = FavoriteRepositoryImpl(local)
@@ -58,6 +64,68 @@ class CharacterLookupRepositoriesTest {
         info = PageInfoDto(count = ids.size, pages = 1, next = null, prev = null),
         results = ids.map { testCharacterDto(it) }
     )
+
+    // --- saveFetchedCharacters: one transaction per batch (6C.3A) ---
+
+    @Test
+    fun saveFetched_updatesListSearchAndFavorites_insideOneTransaction() = runTest {
+        characterDao.characters.value = listOf(testCharacter(1, name = "Old 1").toEntity())
+        favoriteDao.rows.value = listOf(
+            testCharacter(1, name = "Old 1").toFavoriteEntity(),
+            testCharacter(2, name = "Old 2").toFavoriteEntity()
+        )
+
+        local.saveFetchedCharacters(listOf(testCharacter(1, name = "New 1"), testCharacter(2, name = "New 2")))
+
+        assertEquals(1, transactions.transactions)
+        // In the list cache: updated there, not copied into the search cache.
+        assertEquals("New 1", characterDao.characters.value.single().name)
+        assertEquals(listOf(2), searchDao.rows.value.map { it.id })
+        assertEquals("New 2", searchDao.rows.value.single().name)
+        assertEquals(NOW, searchDao.rows.value.single().updatedAt)
+        assertEquals(listOf("New 1", "New 2"), favoriteDao.rows.value.sortedBy { it.id }.map { it.name })
+        // Bounded search cache unchanged.
+        assertEquals(1_000, searchDao.lastMaxEntries)
+    }
+
+    @Test
+    fun saveFetched_duplicateIds_keepTheLastValue_asBefore() = runTest {
+        local.saveFetchedCharacters(listOf(testCharacter(5, name = "First"), testCharacter(5, name = "Second")))
+
+        assertEquals(1, transactions.transactions)
+        assertEquals(listOf("Second"), searchDao.rows.value.map { it.name })
+    }
+
+    @Test
+    fun saveFetched_emptyBatch_writesNothing_andOpensNoTransaction() = runTest {
+        local.saveFetchedCharacters(emptyList())
+
+        assertEquals(0, transactions.transactions)
+        assertTrue(searchDao.rows.value.isEmpty())
+        assertNull(searchDao.lastMaxEntries)
+    }
+
+    @Test
+    fun saveFetched_databaseFailure_isRethrown_fromInsideTheTransaction() = runTest {
+        var failedInsideTransaction = false
+        val failingFavorites = object : FavoriteCharacterDao by favoriteDao {
+            override suspend fun updateFavoriteIfExists(
+                id: Int, name: String, status: String, species: String, imageUrl: String?,
+                type: String?, gender: String?, originName: String?, originId: Int?,
+                locationName: String?, locationId: Int?, episodeIds: String?
+            ) {
+                failedInsideTransaction = transactions.inTransaction
+                throw IllegalStateException("disk full")
+            }
+        }
+        val failing = CharacterLookupLocalDataSourceImpl(
+            characterDao, searchDao, failingFavorites, transactionRunner = transactions, nowMillis = { now }
+        )
+
+        assertFailsWith<IllegalStateException> { failing.saveFetchedCharacters(listOf(testCharacter(1))) }
+        // Thrown inside the transaction, so Room rolls the batch back (verified on Room).
+        assertTrue(failedInsideTransaction)
+    }
 
     // --- search ---
 

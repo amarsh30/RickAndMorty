@@ -2,6 +2,8 @@ package com.amr.shared.di
 
 import androidx.room.RoomDatabase
 import com.amr.core.database.CharacterDatabase
+import com.amr.core.database.DatabaseTransactionRunner
+import com.amr.core.database.RoomDatabaseTransactionRunner
 import com.amr.core.database.createCharacterDatabase
 import com.amr.core.database.dao.CharacterDao
 import com.amr.core.database.dao.EpisodeDao
@@ -19,6 +21,8 @@ val databaseModule = module {
             builder = builder
         )
     }
+
+    single<DatabaseTransactionRunner> { RoomDatabaseTransactionRunner(get<CharacterDatabase>()) }
 
     single<CharacterDao> {
         get<CharacterDatabase>().characterDao()

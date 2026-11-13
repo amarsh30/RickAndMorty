@@ -27,6 +27,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
+import androidx.lifecycle.ViewModelStore
+import com.amr.feature.episode.presentation.DATABASE_ERROR_MESSAGE
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -67,7 +71,14 @@ class EpisodeViewModelsTest {
             pagination.value = PaginationState.EndReached
         }
         override fun observeEpisode(id: Int): Flow<Episode?> = details.map { it[id] }
-        override fun observeCharacterIds(id: Int): Flow<List<Int>> = characterIds.map { it[id].orEmpty() }
+        /** Times the character-id query was subscribed to (each one is a Room query in the app). */
+        var characterIdSubscriptions = 0
+        var characterIdsError: Exception? = null
+        override fun observeCharacterIds(id: Int): Flow<List<Int>> = flow {
+            characterIdSubscriptions++
+            characterIdsError?.let { throw it }
+            emitAll(characterIds.map { it[id].orEmpty() })
+        }
         var detailRefreshCalls = 0
         override suspend fun refreshEpisode(id: Int) {
             detailRefreshCalls++
@@ -201,6 +212,92 @@ class EpisodeViewModelsTest {
         assertEquals((50 downTo 31).toList(), state.characters.map { it.id })
         assertEquals(CHARACTER_PAGE_SIZE, state.characters.size)
         assertTrue(state.canShowMoreCharacters)
+    }
+
+    // --- One shared collection of the character-id query (6C.3A) ---
+
+    @Test
+    fun detail_characterIdQuery_isCollectedOnce_acrossObserverFetcherRetryAndWindowGrowth() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIds.value = mapOf(1 to (1..50).toList())
+        related.fetchError = DataError.Timeout()
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        // Observer and fetcher share one subscription (was two, plus one per retry).
+        assertEquals(1, episodes.characterIdSubscriptions)
+        assertEquals(1, episodes.characterIds.subscriptionCount.value)
+        assertNotNull(viewModel.uiState.value.charactersErrorMessage)
+
+        related.fetchError = null
+        viewModel.loadMoreCharacters() // retry the failed window
+        advanceUntilIdle()
+        viewModel.loadMoreCharacters() // grow the window
+        advanceUntilIdle()
+
+        assertEquals(1, episodes.characterIdSubscriptions)
+        assertEquals(listOf((1..20).toList(), (1..20).toList(), (1..40).toList()), related.fetchCalls)
+        assertEquals(40, viewModel.uiState.value.characters.size)
+        assertEquals(50, viewModel.uiState.value.characterCount)
+        assertTrue(viewModel.uiState.value.canShowMoreCharacters)
+    }
+
+    @Test
+    fun detail_idUpdates_stillReachStateAndFetch() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIds.value = mapOf(1 to listOf(1, 2))
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+        assertEquals(2, viewModel.uiState.value.characterCount)
+
+        episodes.characterIds.value = mapOf(1 to listOf(1, 2, 3))
+        advanceUntilIdle()
+
+        assertEquals(3, viewModel.uiState.value.characterCount)
+        assertEquals(listOf(1, 2, 3), viewModel.uiState.value.characters.map { it.id })
+        assertEquals(listOf(1, 2, 3), related.fetchCalls.last())
+        assertEquals(1, episodes.characterIdSubscriptions)
+    }
+
+    @Test
+    fun detail_noCharacters_isEmptyWithoutFetching() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(0, state.characterCount)
+        assertTrue(state.characters.isEmpty())
+        assertFalse(state.canShowMoreCharacters)
+        assertFalse(state.isLoadingCharacters)
+        assertTrue(related.fetchCalls.isEmpty())
+    }
+
+    @Test
+    fun detail_characterIdQueryFailure_showsDatabaseError_andKeepsTheEpisode() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIdsError = IllegalStateException("db")
+        val viewModel = detailViewModel()
+        advanceUntilIdle()
+
+        assertEquals(DATABASE_ERROR_MESSAGE, viewModel.uiState.value.charactersErrorMessage)
+        assertEquals(pilot, viewModel.uiState.value.episode)
+        assertTrue(related.fetchCalls.isEmpty())
+    }
+
+    @Test
+    fun detail_clearingTheViewModel_cancelsTheSharedCollection() = runTest(dispatcher) {
+        episodes.details.value = mapOf(1 to pilot)
+        episodes.characterIds.value = mapOf(1 to listOf(1))
+        val store = ViewModelStore()
+        store.put("detail", detailViewModel())
+        advanceUntilIdle()
+        assertEquals(1, episodes.characterIds.subscriptionCount.value)
+
+        store.clear()
+        advanceUntilIdle()
+
+        assertEquals(0, episodes.characterIds.subscriptionCount.value)
     }
 
     @Test

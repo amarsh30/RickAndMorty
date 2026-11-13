@@ -10,6 +10,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 
 class FakeLocationRepository : LocationRepository {
     val list = MutableStateFlow<List<Location>>(emptyList())
@@ -45,7 +47,14 @@ class FakeLocationRepository : LocationRepository {
     }
 
     override fun observeLocation(id: Int): Flow<Location?> = details.map { it[id] }
-    override fun observeResidentIds(id: Int): Flow<List<Int>> = residentIds.map { it[id].orEmpty() }
+    /** Times the resident-id query was subscribed to (each one is a Room query in the app). */
+    var residentIdSubscriptions = 0
+    var residentIdsError: Exception? = null
+    override fun observeResidentIds(id: Int): Flow<List<Int>> = flow {
+        residentIdSubscriptions++
+        residentIdsError?.let { throw it }
+        emitAll(residentIds.map { it[id].orEmpty() })
+    }
 
     override suspend fun refreshLocation(id: Int) {
         detailError?.let { throw it }

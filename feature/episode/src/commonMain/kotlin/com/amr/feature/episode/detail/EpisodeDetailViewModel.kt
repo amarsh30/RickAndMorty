@@ -17,6 +17,9 @@ import com.amr.feature.episode.presentation.toUserMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -62,10 +65,21 @@ class EpisodeDetailViewModel(
     val uiState: StateFlow<EpisodeDetailUiState> = _uiState.asStateFlow()
 
     private val windowSize = MutableStateFlow(CHARACTER_PAGE_SIZE)
+    /**
+     * One collection of the character-id query, shared by the character observer, the
+     * fetcher and the retry (null until the first ids arrive). Started with the
+     * ViewModel, like the collectors that read it, and stopped with viewModelScope.
+     */
     private val visibleIds = combine(observeCharacterIds(episodeId), windowSize) { ids, size ->
         _uiState.update { it.copy(characterCount = ids.size, canShowMoreCharacters = size < ids.size) }
         ids.take(size)
     }.distinctUntilChanged()
+        // Same database-error state as the character observer shows.
+        .catch { exception ->
+            if (exception is CancellationException) throw exception
+            _uiState.update { it.copy(charactersErrorMessage = DATABASE_ERROR_MESSAGE) }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = null)
 
     /** Operations that last failed for a connectivity reason; retried once the network returns. */
     private var refreshPending = false
@@ -108,6 +122,7 @@ class EpisodeDetailViewModel(
     private fun observeCharacters() {
         viewModelScope.launch {
             visibleIds
+                .filterNotNull()
                 .flatMapLatest { ids -> observeRelatedCharacters(ids) }
                 .catch { exception ->
                     if (exception is CancellationException) throw exception
@@ -116,7 +131,7 @@ class EpisodeDetailViewModel(
                 .collect { characters -> _uiState.update { it.copy(characters = characters) } }
         }
         viewModelScope.launch {
-            visibleIds.collect { ids -> fetchCharacters(ids) }
+            visibleIds.filterNotNull().collect { ids -> fetchCharacters(ids) }
         }
     }
 
@@ -165,7 +180,7 @@ class EpisodeDetailViewModel(
         if (state.isLoadingCharacters) return
 
         if (state.charactersErrorMessage != null) {
-            viewModelScope.launch { fetchCharacters(visibleIds.first()) }
+            viewModelScope.launch { fetchCharacters(visibleIds.filterNotNull().first()) }
         } else if (state.canShowMoreCharacters) {
             windowSize.update { it + CHARACTER_PAGE_SIZE }
         }
