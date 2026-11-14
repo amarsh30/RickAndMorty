@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup rules for Android 11 (API 30) and lower; Android 12+ uses
+    data_extraction_rules.xml instead. Same policy: only the Room database (favorites plus
+    its offline cache) and its -wal file, which can hold recent writes. Once an <include> is
+    present, every other file is left out.
+
+    Keep the file name in sync with DatabaseBuilder.android.kt ("rick_and_morty.db").
+-->
+<full-backup-content>
+    <include domain="database" path="rick_and_morty.db" />
+    <include domain="database" path="rick_and_morty.db-wal" />
+</full-backup-content>

@@ -34,7 +34,8 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
-            implementation(libs.compose.uiTooling)
+            // ui-tooling (PreviewActivity) is development-only: Studio previews get it from the
+            // androidRuntimeClasspath entry below, and the app adds it as debugImplementation.
         }
         commonMain.dependencies {
             implementation(libs.compose.runtime)
